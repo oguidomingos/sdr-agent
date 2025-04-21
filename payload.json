@@ -1,0 +1,14 @@
+{
+  "instance": "teste",
+  "type": "Message_Upsert",
+  "data": {
+    "key": {
+      "remoteJid": "+5561936180578",
+      "fromMe": false
+    },
+    "pushName": "Teste",
+    "message": {
+      "conversation": "Olá, teste!"
+    }
+  }
+}
