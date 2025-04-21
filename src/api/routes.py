@@ -80,38 +80,18 @@ async def handle_webhook(
         print(f"Nome do usuário: {push_name}")
         print(f"Mensagem recebida: {user_message}")
 
-        # Recupera a sessão existente
-        current_session = await session_manager.get_session(sender_number)
-        
-        # Cria mensagem do usuário
+        # Cria/atualiza a sessão
         message = Message(
             user_id=sender_number,
             user_name=push_name,
             content=user_message,
-            metadata={
-                "from_me": False,
-                "instance": webhook_data.get("instance", "default")
-            }
+            metadata={"from_me": False}
         )
-        
-        # Atualiza a sessão com a nova mensagem
         session = await session_manager.update_session(
             user_id=sender_number,
             message=message,
-            metadata={
-                "name": push_name,
-                "instance": webhook_data.get("instance", "default")
-            }
+            metadata={"name": push_name}
         )
-
-        # Se for primeira mensagem, envia saudação
-        if not current_session:
-            await message_handler.send_greeting(
-                user_id=sender_number,
-                name=push_name,
-                instance=webhook_data.get("instance", "default")
-            )
-            return {"status": "greeting_sent"}
 
         # Processa a mensagem com o Gemini
         response = await gemini_client.process_session(
@@ -137,28 +117,12 @@ async def handle_webhook(
             message=bot_message
         )
 
-        # Se for primeira mensagem do usuário, envia saudação
-        session_messages = await session_manager.get_session_messages(sender_number)
-        if len(session_messages) <= 2:  # Considera primeira mensagem + resposta
-            await message_handler.send_greeting(sender_number, push_name)
-        else:
-            # Envia resposta do Gemini em partes se necessário
-            message_parts = whatsapp_sender._split_message(response.content)
-            for part in message_parts:
-                whatsapp_message = WhatsAppMessage(
-                    number=sender_number,
-                    message=part
-                )
-                typing_duration = (
-                    5 if len(part) < 50 else
-                    7 if len(part) < 200 else
-                    10
-                )
-                await whatsapp_sender.send_message(
-                    message=whatsapp_message,
-                    typing_duration=typing_duration,
-                    cooldown=2  # 2 segundos entre partes
-                )
+        # Envia a resposta para o WhatsApp
+        whatsapp_message = WhatsAppMessage(
+            number=sender_number,
+            message=response.content
+        )
+        await whatsapp_sender.send_message(whatsapp_message)
         
         return {
             "status": "success",

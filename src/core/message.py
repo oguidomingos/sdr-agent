@@ -1,11 +1,8 @@
 from datetime import datetime
-from typing import Optional, Dict, Any, List
-import asyncio
+from typing import Optional, Dict, Any
 
-from src.types.schemas import WebhookData, Message, WhatsAppMessage
+from src.types.schemas import WebhookData, Message
 from src.config.settings import settings
-from src.core.whatsapp import WhatsAppSender
-from src.config.prompts import RESPONSES
 
 
 class MessageHandler:
@@ -15,46 +12,6 @@ class MessageHandler:
     
     def __init__(self):
         self._validate_settings()
-        self.whatsapp = WhatsAppSender()
-
-    async def send_greeting(self, user_id: str, name: str, instance: Optional[str] = None) -> None:
-        """
-        Envia mensagem de saudação dividida em partes
-        """
-        # Envia apenas as duas primeiras partes da saudação
-        greeting_parts = [
-            (RESPONSES['greeting_part1'].format(name=name), 5),  # curta
-            (RESPONSES['greeting_part2'], 7)   # média
-        ]
-
-        for part, typing_duration in greeting_parts:
-            try:
-                # Envia efeito "digitando"
-                await self.whatsapp.send_typing_status(
-                    number=user_id,
-                    duration=typing_duration,
-                    instance=instance
-                )
-
-                # Envia a mensagem
-                message = WhatsAppMessage(
-                    number=user_id,
-                    message=part.strip(),
-                    metadata={"instance": instance} if instance else None
-                )
-                
-                await self.whatsapp.send_message(
-                    message=message,
-                    typing_duration=0,  # já enviamos o efeito separadamente
-                    cooldown=2  # 2 segundos entre partes
-                )
-                
-                # Pequena pausa entre mensagens
-                await asyncio.sleep(1)
-                
-            except Exception as e:
-                print(f"Erro ao enviar parte da saudação: {str(e)}")
-                continue
 
     def _validate_settings(self) -> None:
         """

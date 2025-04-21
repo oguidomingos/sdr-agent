@@ -35,26 +35,12 @@ class SessionManager:
             SessionContext: Contexto da sessão ou None se não existir
         """
         try:
-            # Testa conexão com Redis
-            if not self.redis.ping():
-                print("Redis não está respondendo")
-                return None
-
             session_data = self.redis.get(self._get_session_key(user_id))
             if not session_data:
                 return None
                 
-            # Tenta converter o JSON
-            try:
-                data = json.loads(session_data)
-            except json.JSONDecodeError:
-                print("Erro ao decodificar dados da sessão")
-                return None
-                
-            # Valida estrutura dos dados
-            if not isinstance(data, dict) or 'messages' not in data:
-                print("Formato de dados inválido no Redis")
-                return None
+            # Converte o JSON armazenado em SessionContext
+            data = json.loads(session_data)
             
             # Converte as mensagens de dict para objetos Message
             messages = [
@@ -91,72 +77,48 @@ class SessionManager:
             SessionContext: Sessão atualizada
         """
         try:
-            # Recupera a sessão existente ou cria uma nova
-            current_session = await self.get_session(user_id)
-            
-            # Somente processa se as sessões estiverem habilitadas
-            if not settings.SESSION_CONFIG['enabled']:
-                return SessionContext(
+            # Recupera ou cria nova sessão
+            session = await self.get_session(user_id)
+            if not session:
+                session = SessionContext(
                     user_id=user_id,
-                    messages=[message],
+                    messages=[],
                     metadata=metadata or {}
                 )
-
-            # Inicializa a lista de mensagens
-            messages = []
             
-            if current_session:
-                # Adiciona mensagens existentes
-                messages.extend(current_session.messages)
-                
-                # Remove mensagens antigas se exceder o limite
-                max_history = settings.SESSION_CONFIG['max_history']
-                if len(messages) >= max_history:
-                    messages = messages[-(max_history-1):]  # Remove mais antigas mantendo espaço para nova
+            # Atualiza a sessão
+            session.messages.append(message)
+            session.last_interaction = datetime.now()
             
-            # Adiciona a nova mensagem
-            messages.append(message)
+            # Mantém apenas as últimas N mensagens (janela deslizante)
+            if len(session.messages) > settings.CONTEXT_WINDOW_SIZE:
+                session.messages = session.messages[-settings.CONTEXT_WINDOW_SIZE:]
             
-            # Cria ou atualiza a sessão
-            session = SessionContext(
-                user_id=user_id,
-                messages=messages,
-                metadata={
-                    **(current_session.metadata if current_session else {}),
-                    **(metadata or {})
+            # Atualiza metadados se fornecidos
+            if metadata:
+                session.metadata = {
+                    **(session.metadata or {}),
+                    **metadata
                 }
-            )
             
-            # Prepara dados para salvar no Redis
-            messages_data = []
-            for msg in session.messages:
-                msg_dict = msg.dict()
-                # Garante que timestamp seja string
-                if isinstance(msg_dict.get('timestamp'), datetime):
-                    msg_dict['timestamp'] = msg_dict['timestamp'].isoformat()
-                messages_data.append(msg_dict)
-
+            # Salva no Redis
             session_data = {
                 'user_id': session.user_id,
-                'messages': messages_data,
-                'last_interaction': datetime.now().isoformat(),
-                'metadata': session.metadata or {}
+                'messages': [
+                    {
+                        **msg.dict(),
+                        'timestamp': msg.timestamp.isoformat()
+                    } for msg in session.messages
+                ],
+                'last_interaction': session.last_interaction.isoformat(),
+                'metadata': session.metadata
             }
             
-            # Tenta salvar no Redis com retry
-            for attempt in range(3):  # 3 tentativas
-                try:
-                    self.redis.setex(
-                        self._get_session_key(user_id),
-                        settings.SESSION_CONFIG['timeout'],
-                        json.dumps(session_data)
-                    )
-                    break
-                except redis.RedisError as e:
-                    print(f"Tentativa {attempt + 1} falhou: {str(e)}")
-                    if attempt == 2:  # última tentativa
-                        print("Todas as tentativas de salvar no Redis falharam")
-                        return session
+            self.redis.setex(
+                self._get_session_key(user_id),
+                settings.SESSION_TIMEOUT,
+                json.dumps(session_data)
+            )
             
             return session
             
@@ -246,7 +208,7 @@ class SessionManager:
             
             self.redis.setex(
                 self._get_session_key(user_id),
-                settings.SESSION_CONFIG['timeout'],
+                settings.SESSION_TIMEOUT,
                 json.dumps(session_data)
             )
             

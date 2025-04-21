@@ -77,9 +77,9 @@ class GeminiClient:
         Returns:
             str: Prompt formatado
         """
-        # Importa e usa o prompt base configurado
-        from src.config.prompts import BASE_PROMPT, RESPONSES
+        # Usa o prompt base configurado
         base_prompt = BASE_PROMPT
+        
         # Adiciona o contexto se disponível
         if context:
             base_prompt += f"\nContexto da conversa:\n{context}\n"
@@ -160,22 +160,14 @@ class GeminiClient:
         # Formata o contexto da sessão
         context = self._format_context(session)
         
-        # Se for primeira mensagem, retorna as duas primeiras partes da saudação
+        # Se for primeira mensagem, usa o template de greeting
         if is_first_message and user_message.lower() in ['oi', 'olá', 'ola', 'hey']:
             name = session.metadata.get('name', '')
-            greeting_part1 = RESPONSES['greeting_part1'].format(name=name)
-            greeting_part2 = RESPONSES['greeting_part2'].format(name=name)
-            
-            # Retorna imediatamente um objeto GeminiResponse com as duas partes
-            return GeminiResponse(
-                content=json.dumps({
-                    'type': 'greeting',
-                    'parts': [greeting_part1, greeting_part2]
-                }),
-                metadata={
-                    'is_greeting': True,
-                    'parts_count': 2
-                }
+            greeting = RESPONSES['greeting'].format(name=name)
+            request = GeminiRequest(
+                prompt=f"{greeting}\n\n{user_message}",
+                context=context,
+                parameters=parameters
             )
         else:
             # Cria a requisição normal

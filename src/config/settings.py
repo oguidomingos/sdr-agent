@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     EVOLUTION_API_KEY: Optional[str] = None
     
     # Configurações do Redis
-    REDIS_HOST: str = "localhost"
+    REDIS_HOST: str = "redis"  # Nome do serviço no docker-compose
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_PASSWORD: Optional[str] = None
@@ -23,21 +23,8 @@ class Settings(BaseSettings):
     WEBHOOK_PATH: str = "/webhook"
     
     # Configurações da Sessão
-    SESSION_CONFIG: dict = {
-        "enabled": True,
-        "timeout": 3600,  # 1 hora de timeout
-        "max_history": 50  # máximo de mensagens no histórico
-    }
-
-    # Configurações de Mensagens
-    MESSAGE_CONFIG: dict = {
-        "typing_effect": {
-            "short": 5,  # 5 segundos para mensagens curtas
-            "medium": 7,  # 7 segundos para mensagens médias
-            "long": 10   # 10 segundos para mensagens longas
-        },
-        "cooldown": 2  # intervalo entre mensagens
-    }
+    SESSION_TIMEOUT: int = 86400  # 24 horas em segundos
+    CONTEXT_WINDOW_SIZE: int = 20  # Número de mensagens mantidas no contexto
     
     # Configurações do Server
     HOST: str = "0.0.0.0"
