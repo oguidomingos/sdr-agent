@@ -9,6 +9,7 @@ from src.core.session import SessionManager
 from src.core.gemini import GeminiClient
 from src.core.whatsapp import WhatsAppSender
 from src.config.settings import settings
+from src.api.clients import router as clients_router
 
 # Inicializa a aplicação FastAPI
 app = FastAPI(
@@ -16,6 +17,9 @@ app = FastAPI(
     description="API para processamento de mensagens do WhatsApp usando IA",
     version="1.0.0"
 )
+
+# Include routers
+app.include_router(clients_router)
 
 # Inicializa os componentes principais
 message_handler = MessageHandler()
@@ -59,7 +63,7 @@ async def log_requests(request: Request, call_next):
     return response
 
 
-@app.post("/webhook")
+@app.post("/webhook/whatsapp")
 async def handle_webhook(
     request: Request,
     x_hub_signature: Optional[str] = Header(None)

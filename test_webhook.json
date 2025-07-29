@@ -1,0 +1,13 @@
+{
+  "instance": "teste_whatsapp",
+  "data": {
+    "key": {
+      "remoteJid": "5511999999999@s.whatsapp.net",
+      "fromMe": false
+    },
+    "message": {
+      "conversation": "Oi, preciso de ajuda!"
+    },
+    "pushName": "João"
+  }
+}
