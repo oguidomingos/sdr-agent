@@ -188,7 +188,7 @@ from .models import WebhookData
 app = FastAPI()
 message_handler = MessageHandler()
 
-@app.post("/webhook")
+@app.post("/webhook/whatsapp")
 async def handle_webhook(data: WebhookData):
     try:
         await message_handler.process_message(data)

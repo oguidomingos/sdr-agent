@@ -93,7 +93,7 @@ curl -X POST http://localhost:8888/instance/create \
   -d '{
     "instanceName": "sdr-agent",
     "qrcode": true,
-    "webhook": "http://localhost:8000/legacy/webhook"
+    "webhook": "http://localhost:8000/webhook/whatsapp"
   }'
 ```
 

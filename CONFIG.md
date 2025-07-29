@@ -41,13 +41,13 @@ cp .env.example .env
 ## 2. Configurando o Webhook na Evolution API
 
 ### Para acesso local:
-1. URL do webhook: `http://localhost:8000/webhook`
+1. URL do webhook: `http://localhost:8000/webhook/whatsapp`
 
 ### Para acesso externo:
 1. Se estiver usando em produção, você precisa:
    - Ter um domínio configurado (exemplo: seudominio.com)
    - Configurar SSL (recomendado usar Nginx + Let's Encrypt)
-   - URL do webhook será: `https://seudominio.com/webhook`
+   - URL do webhook será: `https://seudominio.com/webhook/whatsapp`
 
 2. Se estiver testando localmente e precisar de acesso externo:
    - Use ngrok para criar um túnel:
@@ -57,13 +57,13 @@ cp .env.example .env
    ngrok http 8000
    ```
    - Copie a URL https gerada (exemplo: https://a1b2c3d4.ngrok.io)
-   - Use esta URL + /webhook na Evolution API
+   - Use esta URL + /webhook/whatsapp na Evolution API
 
 3. Na Evolution API:
    - Acesse sua instância
    - Vá em "Configurações" > "Webhooks"
    - Adicione novo webhook:
-     - URL: sua URL completa + /webhook
+     - URL: sua URL completa + /webhook/whatsapp
      - Eventos: selecione `Message_Upsert`
      - Secret: use o mesmo valor de `WEBHOOK_SECRET` do seu .env
 

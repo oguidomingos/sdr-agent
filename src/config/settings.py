@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     ALLOWED_FILE_TYPES: str = "image/jpeg,image/png,image/gif,application/pdf,text/plain"
     
     # Webhook Configuration
-    WEBHOOK_PATH: str = "/webhook"
+    WEBHOOK_PATH: str = "/webhook/whatsapp"
     WEBHOOK_TIMEOUT: int = 30
     WEBHOOK_RETRY_ATTEMPTS: int = 3
     WEBHOOK_RETRY_DELAY: int = 5

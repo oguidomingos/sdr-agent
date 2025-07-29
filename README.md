@@ -70,7 +70,7 @@ docker-compose up -d
 
 1. Configure o webhook na Evolution API para apontar para:
 ```
-http://seu-servidor:8000/webhook
+http://seu-servidor:8000/webhook/whatsapp
 ```
 
 2. O sistema irá:
@@ -108,7 +108,7 @@ sdr-agent/
 
 ## Endpoints da API
 
-- `POST /webhook` - Recebe webhooks da Evolution API
+- `POST /webhook/whatsapp` - Recebe webhooks da Evolution API
 - `GET /health` - Healthcheck da aplicação
 - `GET /sessions/{user_id}` - Consulta dados de uma sessão
 - `DELETE /sessions/{user_id}` - Remove uma sessão
