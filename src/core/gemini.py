@@ -10,27 +10,34 @@ from src.config.prompts import BASE_PROMPT, RESPONSES
 class GeminiClient:
     """
     Cliente para interação com a API do Google Gemini
+    Agora suporta configurações específicas por cliente
     """
     
-    def __init__(self):
-        self._validate_settings()
-        genai.configure(api_key=settings.GEMINI_API_KEY)
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+        # Usa configurações específicas ou fallback para globais
+        self.api_key = api_key or settings.GEMINI_API_KEY
+        self.model_name = model or settings.GEMINI_MODEL
         
-        # Lista os modelos disponíveis
-        print("\n=== Modelos Gemini Disponíveis ===")
-        for model in genai.list_models():
-            print(f"- {model.name}")
-        print("=== Fim da Lista de Modelos ===\n")
+        self._validate_settings()
+        genai.configure(api_key=self.api_key)
+        
+        # Lista os modelos disponíveis apenas uma vez
+        if not hasattr(GeminiClient, '_models_listed'):
+            print("\n=== Modelos Gemini Disponíveis ===")
+            for model in genai.list_models():
+                print(f"- {model.name}")
+            print("=== Fim da Lista de Modelos ===\n")
+            GeminiClient._models_listed = True
         
         # Usa o modelo configurado
-        self.model = genai.GenerativeModel(settings.GEMINI_MODEL)
-        print(f"Modelo Gemini inicializado: {settings.GEMINI_MODEL}")
+        self.model = genai.GenerativeModel(self.model_name)
+        print(f"Modelo Gemini inicializado: {self.model_name}")
 
     def _validate_settings(self) -> None:
         """
         Valida se a API key do Gemini está configurada
         """
-        if not settings.GEMINI_API_KEY:
+        if not self.api_key:
             raise ValueError("GEMINI_API_KEY não configurada")
 
     def _format_context(self, session: SessionContext) -> str:

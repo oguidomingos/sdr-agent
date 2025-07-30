@@ -63,13 +63,22 @@ app.add_middleware(
 )
 
 # Import and include API routers
-from src.api.routes import router as webhook_router
+from src.api.routes import router as legacy_webhook_router
 from src.api.clients import router as clients_router
+from src.api.auth_routes import router as auth_router, client_router
+from src.api.webhook_routes import router as webhook_router
 
-# Include webhook routes
+# Include authentication routes
+app.include_router(auth_router)
+app.include_router(client_router)
+
+# Include new multi-tenant webhook routes
 app.include_router(webhook_router)
 
-# Include new multi-client API routes
+# Include legacy webhook routes (for backward compatibility)
+app.include_router(legacy_webhook_router, prefix="/legacy")
+
+# Include legacy client API routes
 app.include_router(clients_router)
 
 # Health check endpoint

@@ -15,7 +15,7 @@ import {
 
 // Create axios instance with base configuration
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: 'http://localhost:8000',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -40,10 +40,33 @@ api.interceptors.response.use(
   }
 );
 
+// Authentication API functions
+export const authApi = {
+  login: async (email: string, password: string): Promise<{ access_token: string; token_type: string; expires_in: number }> => {
+    const response = await api.post('/auth/login', { email, password });
+    return response.data;
+  },
+
+  register: async (email: string, password: string, first_name: string, last_name?: string) => {
+    const response = await api.post('/auth/register', { 
+      email, 
+      password, 
+      first_name, 
+      last_name 
+    });
+    return response.data;
+  },
+
+  me: async () => {
+    const response = await api.get('/auth/me');
+    return response.data;
+  },
+};
+
 // Client API functions
 export const clientsApi = {
   getAll: async (skip = 0, limit = 100): Promise<ClientListResponse> => {
-    const response = await api.get(`/clients?skip=${skip}&limit=${limit}`);
+    const response = await api.get(`/clients/?skip=${skip}&limit=${limit}`);
     return response.data;
   },
 
@@ -53,7 +76,7 @@ export const clientsApi = {
   },
 
   create: async (data: ClientCreateData): Promise<Client> => {
-    const response = await api.post('/clients', data);
+    const response = await api.post('/clients/', data);
     return response.data;
   },
 

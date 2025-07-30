@@ -11,11 +11,17 @@ from src.config.settings import settings
 class WhatsAppSender:
     """
     Gerencia o envio de mensagens via Evolution API
+    Agora suporta configurações específicas por cliente
     """
     
-    def __init__(self):
+    def __init__(self, evolution_url: Optional[str] = None, evolution_key: Optional[str] = None, instance: Optional[str] = None):
+        # Usa configurações específicas ou fallback para globais
+        self.evolution_url = evolution_url or settings.EVOLUTION_API_URL
+        self.evolution_key = evolution_key or settings.EVOLUTION_API_KEY
+        self.default_instance = instance or settings.DEFAULT_EVOLUTION_INSTANCE
+        
         self._validate_settings()
-        self.base_url = settings.EVOLUTION_API_URL.rstrip('/')
+        self.base_url = self.evolution_url.rstrip('/')
         self.headers = self._get_headers()
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -27,11 +33,11 @@ class WhatsAppSender:
         """
         Valida configurações necessárias
         """
-        if not settings.EVOLUTION_API_URL:
+        if not self.evolution_url:
             raise ValueError("EVOLUTION_API_URL não configurada")
             
-        if settings.EVOLUTION_API_KEY:
-            if not settings.EVOLUTION_API_KEY:
+        if self.evolution_key:
+            if not self.evolution_key:
                 raise ValueError("EVOLUTION_API_KEY não configurada")
 
     def _get_headers(self) -> Dict[str, str]:
@@ -42,8 +48,8 @@ class WhatsAppSender:
             'Content-Type': 'application/json'
         }
         
-        if settings.EVOLUTION_API_KEY:
-            headers['apikey'] = settings.EVOLUTION_API_KEY
+        if self.evolution_key:
+            headers['apikey'] = self.evolution_key
             
         return headers
 
@@ -154,7 +160,7 @@ class WhatsAppSender:
                         typing_duration = 10  # long
                 
                 # Obtém o nome da instância dos metadados ou usa o padrão
-                instance_name = message.metadata.get('instance') if message.metadata else settings.DEFAULT_EVOLUTION_INSTANCE
+                instance_name = message.metadata.get('instance') if message.metadata else self.default_instance
                 
                 # Ativa o status de digitação antes de cada parte
                 try:
@@ -221,7 +227,7 @@ class WhatsAppSender:
         """
         try:
             if not instance:
-                instance = settings.DEFAULT_EVOLUTION_INSTANCE
+                instance = self.default_instance
             
             # Formata o número
             formatted_number = self._format_number(number)
@@ -256,7 +262,7 @@ class WhatsAppSender:
             
         try:
             if not instance:
-                instance = settings.DEFAULT_EVOLUTION_INSTANCE
+                instance = self.default_instance
                 
             # Formata o número
             formatted_number = self._format_number(number)

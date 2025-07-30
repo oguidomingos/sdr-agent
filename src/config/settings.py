@@ -110,6 +110,9 @@ class Settings(BaseSettings):
     MOCK_WHATSAPP_RESPONSES: bool = False
     ENABLE_TEST_ENDPOINTS: bool = False
     SEED_DATABASE: bool = True
+    
+    # Multi-tenant settings
+    WEBHOOK_BASE_URL: Optional[str] = None  # Base URL for client webhooks
 
     class Config:
         env_file = ".env"

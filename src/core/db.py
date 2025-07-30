@@ -4,12 +4,21 @@ from sqlalchemy import Column, String, DateTime, JSON, Enum, Integer, Boolean, T
 import enum
 from datetime import datetime
 import uuid
+from passlib.context import CryptContext
 
 from src.config.settings import settings
 
 engine = create_async_engine(settings.DATABASE_URL, echo=True)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 Base = declarative_base()
+
+# Password context for hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+class UserStatus(enum.Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    SUSPENDED = "suspended"
 
 class MessageDirection(str, enum.Enum):
     INBOUND = "inbound"
@@ -33,54 +42,110 @@ class PlaybookStatus(enum.Enum):
     ACTIVE = "active"
     ARCHIVED = "archived"
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=False)
+    first_name = Column(String(100))
+    last_name = Column(String(100))
+    status = Column(Enum(UserStatus, values_callable=lambda obj: [e.value for e in obj]), default=UserStatus.ACTIVE)
+    
+    # Subscription/Plan info
+    plan = Column(String(50), default="free")  # free, basic, premium
+    max_clients = Column(Integer, default=3)  # limit based on plan
+    
+    # Settings
+    timezone = Column(String(50), default="UTC")
+    language = Column(String(10), default="pt-BR")
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login = Column(DateTime)
+    
+    # Relationships
+    clients = relationship("Client", back_populates="owner", cascade="all, delete-orphan")
+    
+    __table_args__ = (
+        Index('idx_user_email', 'email'),
+        Index('idx_user_status', 'status'),
+    )
+    
+    def verify_password(self, password: str) -> bool:
+        """Verify password against hash"""
+        return pwd_context.verify(password, self.hashed_password)
+    
+    @classmethod
+    def hash_password(cls, password: str) -> str:
+        """Hash password for storage"""
+        return pwd_context.hash(password)
+
 class Client(Base):
     __tablename__ = "clients"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    owner_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text)
     domain = Column(String(255), unique=True)
     status = Column(Enum(ClientStatus, values_callable=lambda obj: [e.value for e in obj]), default=ClientStatus.TRIAL)
     
-    # API Configuration
+    # Evolution API Configuration
     evolution_api_url = Column(String(500))
     evolution_api_key = Column(String(500))
     evolution_instance = Column(String(100))
+    evolution_instance_id = Column(String(100))  # ID retornado pela Evolution API
+    evolution_instance_token = Column(String(500))  # Token da instância
+    
+    # AI Configuration
     gemini_api_key = Column(String(500))
     gemini_model = Column(String(100), default="gemini-2.0-flash")
+    
+    # Agent Configuration
+    agent_prompt = Column(Text)  # Prompt base do agente
+    agent_name = Column(String(100), default="Assistente")
+    agent_persona = Column(Text)
+    welcome_message = Column(Text)
+    
+    # Webhook Configuration
+    webhook_secret = Column(String(255))  # Secret para validar webhooks
+    webhook_url = Column(String(500))  # URL customizada se necessário
     
     # Session Configuration
     session_timeout = Column(Integer, default=3600)
     max_history = Column(Integer, default=50)
     context_window_size = Column(Integer, default=20)
     
-    # Persona and Branding
-    agent_name = Column(String(100), default="SDR Assistant")
-    agent_persona = Column(Text)
-    welcome_message = Column(Text)
-    logo_url = Column(String(500))
-    
     # Business Information
     contact_email = Column(String(255))
     contact_phone = Column(String(50))
     business_hours = Column(JSON)
     timezone = Column(String(50), default="UTC")
+    logo_url = Column(String(500))
     
-    # Settings
+    # AI Settings
     ai_temperature = Column(Integer, default=70)  # 0-100 scale
     rate_limit_enabled = Column(Boolean, default=True)
     rate_limit_calls = Column(Integer, default=100)
     rate_limit_period = Column(Integer, default=3600)
+    
+    # Database Configuration (para futuro isolamento)
+    db_connection_uri = Column(String(1000))  # URI do banco dedicado (opcional)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
+    owner = relationship("User", back_populates="clients")
     messages = relationship("Message", back_populates="client", cascade="all, delete-orphan")
     playbooks = relationship("Playbook", back_populates="client", cascade="all, delete-orphan")
+    agent_configs = relationship("AgentConfig", back_populates="client", cascade="all, delete-orphan")
     
     __table_args__ = (
+        Index('idx_client_owner', 'owner_id'),
         Index('idx_client_domain', 'domain'),
         Index('idx_client_status', 'status'),
     )
@@ -120,6 +185,47 @@ class Playbook(Base):
         Index('idx_playbook_client', 'client_id'),
         Index('idx_playbook_status', 'status'),
         Index('idx_playbook_default', 'client_id', 'is_default'),
+    )
+
+class AgentConfig(Base):
+    __tablename__ = "agent_configs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    client_id = Column(String, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    version = Column(Integer, default=1)
+    is_active = Column(Boolean, default=True)
+    
+    # Prompt Configuration
+    system_prompt = Column(Text)  # Prompt do sistema
+    welcome_prompt = Column(Text)  # Mensagem de boas-vindas
+    fallback_prompt = Column(Text)  # Resposta quando não entende
+    
+    # SPIN Selling Prompts (herdado do Playbook)
+    situation_prompts = Column(JSON)
+    problem_prompts = Column(JSON)
+    implication_prompts = Column(JSON)
+    need_payoff_prompts = Column(JSON)
+    
+    # AI Parameters
+    temperature = Column(Integer, default=70)  # 0-100
+    max_tokens = Column(Integer, default=1000)
+    top_p = Column(Integer, default=95)  # 0-100
+    
+    # Batch Processing Config
+    batch_enabled = Column(Boolean, default=True)
+    batch_window_seconds = Column(Integer, default=180)  # 3 minutos
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    client = relationship("Client", back_populates="agent_configs")
+    
+    __table_args__ = (
+        Index('idx_agent_config_client', 'client_id'),
+        Index('idx_agent_config_active', 'client_id', 'is_active'),
     )
 
 class Message(Base):

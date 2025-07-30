@@ -17,15 +17,20 @@ class MessageHandler:
         self._validate_settings()
         self.whatsapp = WhatsAppSender()
 
-    async def send_greeting(self, user_id: str, name: str, instance: Optional[str] = None) -> None:
+    async def send_greeting(self, user_id: str, name: str, instance: Optional[str] = None, custom_message: Optional[str] = None) -> None:
         """
         Envia mensagem de saudação dividida em partes
+        Agora suporta mensagem customizada por cliente
         """
-        # Envia apenas as duas primeiras partes da saudação
-        greeting_parts = [
-            (RESPONSES['greeting_part1'].format(name=name), 5),  # curta
-            (RESPONSES['greeting_part2'], 7)   # média
-        ]
+        if custom_message:
+            # Usa mensagem personalizada do cliente
+            greeting_parts = [(custom_message.format(name=name), 7)]
+        else:
+            # Usa mensagens padrão
+            greeting_parts = [
+                (RESPONSES['greeting_part1'].format(name=name), 5),  # curta
+                (RESPONSES['greeting_part2'], 7)   # média
+            ]
 
         for part, typing_duration in greeting_parts:
             try:

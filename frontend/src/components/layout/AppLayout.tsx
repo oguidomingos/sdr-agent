@@ -14,9 +14,30 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { ClientSelector } from '@/components/ui/ClientSelector';
 import { Bell, LogOut, Settings, User } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { AuthPage } from '@/components/auth';
 
 export function AppLayout() {
   const location = useLocation();
+  const { isAuthenticated, isLoading, user, logout } = useAuth();
+
+  // Show loading spinner while checking authentication
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  // Show auth page if not authenticated
+  if (!isAuthenticated) {
+    return <AuthPage />;
+  }
+
+  // Get user initials for avatar
+  const userInitials = user ? `${user.first_name?.[0] || ''}${user.last_name?.[0] || ''}`.toUpperCase() : 'U';
+  const userName = user ? `${user.first_name} ${user.last_name || ''}`.trim() : 'User';
 
   // Páginas que precisam de cliente selecionado
   const clientRequiredPages = ['/conversations', '/playbooks', '/reports'];
@@ -61,16 +82,16 @@ export function AppLayout() {
                   <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                     <Avatar className="h-8 w-8">
                       <AvatarImage src="/placeholder-avatar.png" alt="Usuário" />
-                      <AvatarFallback>AD</AvatarFallback>
+                      <AvatarFallback>{userInitials}</AvatarFallback>
                     </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-56" align="end" forceMount>
                   <DropdownMenuLabel className="font-normal">
                     <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">Admin</p>
+                      <p className="text-sm font-medium leading-none">{userName}</p>
                       <p className="text-xs leading-none text-muted-foreground">
-                        admin@sdr-agent.com
+                        {user?.email}
                       </p>
                     </div>
                   </DropdownMenuLabel>
@@ -84,7 +105,7 @@ export function AppLayout() {
                     <span>Configurações</span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onClick={logout}>
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Sair</span>
                   </DropdownMenuItem>

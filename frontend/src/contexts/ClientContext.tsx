@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { useQuery } from '@tanstack/react-query';
 import { clientsApi } from '@/lib/api';
 import { Client } from '@/types/api';
+import { useAuth } from './AuthContext';
 
 interface ClientContextType {
   selectedClient: Client | null;
@@ -16,8 +17,9 @@ const ClientContext = createContext<ClientContextType | undefined>(undefined);
 
 export function ClientProvider({ children }: { children: ReactNode }) {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const { isAuthenticated } = useAuth();
 
-  // Fetch clients using React Query
+  // Fetch clients using React Query - only when authenticated
   const {
     data: clientsResponse,
     isLoading,
@@ -28,13 +30,14 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     queryFn: () => clientsApi.getAll(),
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
+    enabled: isAuthenticated, // Only fetch when authenticated
   });
 
   const clients = clientsResponse?.clients || [];
 
   // Auto-select first client if none selected and clients are available
   useEffect(() => {
-    if (!selectedClient && clients.length > 0) {
+    if (isAuthenticated && !selectedClient && clients.length > 0) {
       // Try to get from localStorage first
       const savedClientId = localStorage.getItem('selectedClientId');
       if (savedClientId) {
@@ -47,7 +50,14 @@ export function ClientProvider({ children }: { children: ReactNode }) {
       // Otherwise select first client
       setSelectedClient(clients[0]);
     }
-  }, [clients, selectedClient]);
+  }, [clients, selectedClient, isAuthenticated]);
+
+  // Clear selected client when not authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setSelectedClient(null);
+    }
+  }, [isAuthenticated]);
 
   // Save selected client to localStorage
   const handleSetSelectedClient = (client: Client | null) => {
