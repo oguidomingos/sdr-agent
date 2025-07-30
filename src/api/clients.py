@@ -1,184 +1,138 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
-from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
-import uuid
+from sqlalchemy import select, func
+from typing import Optional
 
-from src.core.db import get_db, Client, ClientStatus, Playbook, PlaybookStatus, Message, MessageStatus
-from src.config.settings import settings
-from src.types.schemas import ClientCreate, ClientUpdate, ClientResponse, ClientListResponse
+from src.core.db import get_db, Client, Playbook
+from src.types.schemas import (
+    ClientResponse,
+    ClientListResponse,
+    ClientCreate,
+    ClientUpdate,
+    PlaybookCreate
+)
 
-router = APIRouter(prefix="/api/clients", tags=["clients"])
+router = APIRouter(prefix="/clients", tags=["clients"])
 
+@router.get("", response_model=ClientListResponse)
+async def get_clients(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all clients with pagination"""
+    # Get total count
+    count_stmt = select(func.count(Client.id))
+    count_result = await db.execute(count_stmt)
+    total = count_result.scalar()
+    
+    # Get clients
+    stmt = select(Client).offset(skip).limit(limit).order_by(Client.created_at.desc())
+    result = await db.execute(stmt)
+    clients = result.scalars().all()
+    
+    return ClientListResponse(
+        clients=[ClientResponse.model_validate(client) for client in clients],
+        total=total,
+        skip=skip,
+        limit=limit
+    )
 
-@router.post("/", response_model=ClientResponse)
+@router.get("/{client_id}", response_model=ClientResponse)
+async def get_client(client_id: str, db: AsyncSession = Depends(get_db)):
+    """Get a specific client by ID"""
+    stmt = select(Client).where(Client.id == client_id)
+    result = await db.execute(stmt)
+    client = result.scalar_one_or_none()
+    
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    return ClientResponse.model_validate(client)
+
+@router.post("", response_model=ClientResponse)
 async def create_client(
     client_data: ClientCreate,
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new client"""
-    try:
-        # Check if domain already exists
-        existing_client = await db.execute(
-            select(Client).where(Client.domain == client_data.domain)
-        )
-        if existing_client.scalar_one_or_none():
-            raise HTTPException(
-                status_code=400,
-                detail="Domain already exists"
-            )
-        
-        # Create new client
-        client = Client(
+    import uuid
+    from src.core.db import ClientStatus, PlaybookStatus
+    
+    # Create client
+    client = Client(
+        id=str(uuid.uuid4()),
+        name=client_data.name,
+        description=client_data.description,
+        domain=client_data.domain,
+        status=ClientStatus.TRIAL,
+        evolution_api_url=client_data.evolution_api_url,
+        evolution_api_key=client_data.evolution_api_key,
+        evolution_instance=client_data.evolution_instance,
+        gemini_api_key=client_data.gemini_api_key,
+        gemini_model=client_data.gemini_model or "gemini-2.0-flash",
+        session_timeout=client_data.session_timeout or 3600,
+        max_history=client_data.max_history or 50,
+        context_window_size=client_data.context_window_size or 20,
+        agent_name=client_data.agent_name or "SDR Assistant",
+        agent_persona=client_data.agent_persona,
+        welcome_message=client_data.welcome_message,
+        logo_url=client_data.logo_url,
+        contact_email=client_data.contact_email,
+        contact_phone=client_data.contact_phone,
+        business_hours=client_data.business_hours,
+        timezone=client_data.timezone or "UTC",
+        ai_temperature=client_data.ai_temperature or 70,
+        rate_limit_enabled=client_data.rate_limit_enabled or True,
+        rate_limit_calls=client_data.rate_limit_calls or 100,
+        rate_limit_period=client_data.rate_limit_period or 3600
+    )
+    
+    db.add(client)
+    await db.commit()
+    await db.refresh(client)
+    
+    # Create default playbook if requested
+    if client_data.create_default_playbook:
+        default_playbook = Playbook(
             id=str(uuid.uuid4()),
-            name=client_data.name,
-            description=client_data.description,
-            domain=client_data.domain,
-            status=ClientStatus.TRIAL if settings.REQUIRE_CLIENT_APPROVAL else ClientStatus.ACTIVE,
-            
-            # API Configuration
-            evolution_api_url=client_data.evolution_api_url,
-            evolution_api_key=client_data.evolution_api_key,
-            evolution_instance=client_data.evolution_instance,
-            gemini_api_key=client_data.gemini_api_key,
-            gemini_model=client_data.gemini_model or settings.GEMINI_MODEL,
-            
-            # Session Configuration
-            session_timeout=client_data.session_timeout or settings.SESSION_TIMEOUT,
-            max_history=client_data.max_history or settings.MAX_HISTORY_MESSAGES,
-            context_window_size=client_data.context_window_size or settings.CONTEXT_WINDOW_SIZE,
-            
-            # Persona and Branding
-            agent_name=client_data.agent_name or "SDR Assistant",
-            agent_persona=client_data.agent_persona,
-            welcome_message=client_data.welcome_message or "Olá! Como posso ajudá-lo?",
-            logo_url=client_data.logo_url,
-            
-            # Business Information
-            contact_email=client_data.contact_email,
-            contact_phone=client_data.contact_phone,
-            business_hours=client_data.business_hours or {},
-            timezone=client_data.timezone or "UTC",
-            
-            # Settings
-            ai_temperature=client_data.ai_temperature or 70,
-            rate_limit_enabled=client_data.rate_limit_enabled if client_data.rate_limit_enabled is not None else True,
-            rate_limit_calls=client_data.rate_limit_calls or settings.RATE_LIMIT_CALLS,
-            rate_limit_period=client_data.rate_limit_period or settings.RATE_LIMIT_PERIOD
+            client_id=client.id,
+            name="Default SDR Playbook",
+            description="Default playbook for lead qualification using SPIN methodology",
+            status=PlaybookStatus.ACTIVE,
+            is_default=True,
+            steps=[
+                {"stage": "welcome", "message": "Olá! Como posso ajudá-lo?", "next": "situation"},
+                {"stage": "situation", "prompt": "Descubra a situação atual do lead", "next": "problem"},
+                {"stage": "problem", "prompt": "Identifique os problemas específicos", "next": "implication"},
+                {"stage": "implication", "prompt": "Explore as implicações dos problemas", "next": "need_payoff"},
+                {"stage": "need_payoff", "prompt": "Apresente os benefícios da solução", "next": "close"}
+            ],
+            situation_prompts=[
+                "Qual é a situação atual da sua empresa?",
+                "Como você está lidando com esse desafio atualmente?",
+                "Há quanto tempo vocês enfrentam essa questão?"
+            ],
+            problem_prompts=[
+                "Quais são os principais problemas que isso causa?",
+                "Como isso afeta sua operação diária?",
+                "Qual é o impacto no seu negócio?"
+            ],
+            implication_prompts=[
+                "O que pode acontecer se isso não for resolvido?", 
+                "Como isso pode afetar seus resultados futuros?",
+                "Quais são os riscos de manter a situação atual?"
+            ],
+            need_payoff_prompts=[
+                "Como seria se vocês resolvessem esse problema?",
+                "Qual seria o valor de uma solução efetiva?",
+                "O que significaria ter isso funcionando perfeitamente?"
+            ]
         )
-        
-        db.add(client)
+        db.add(default_playbook)
         await db.commit()
-        await db.refresh(client)
-        
-        # Create default playbook for the client
-        if client_data.create_default_playbook:
-            default_playbook = Playbook(
-                id=str(uuid.uuid4()),
-                client_id=client.id,
-                name="Default Medical SPIN Playbook",
-                description="Default playbook using SPIN methodology",
-                status=PlaybookStatus.ACTIVE,
-                is_default=True,
-                steps=[
-                    {"stage": "welcome", "message": client.welcome_message, "next": "situation"},
-                    {"stage": "situation", "prompt": "Descubra a situação atual", "next": "problem"},
-                    {"stage": "problem", "prompt": "Identifique os problemas", "next": "implication"},
-                    {"stage": "implication", "prompt": "Explore as implicações", "next": "need_payoff"},
-                    {"stage": "need_payoff", "prompt": "Apresente os benefícios", "next": "close"}
-                ],
-                situation_prompts=[
-                    "Há quanto tempo sente esses sintomas?",
-                    "Como isso está afetando seu dia a dia?"
-                ],
-                problem_prompts=[
-                    "Quais são os principais desconfortos?",
-                    "O que mais te preocupa sobre essa situação?"
-                ],
-                implication_prompts=[
-                    "Como isso pode evoluir se não for tratado?",
-                    "Que impacto isso pode ter na sua qualidade de vida?"
-                ],
-                need_payoff_prompts=[
-                    "Como seria sua vida sem esses sintomas?",
-                    "Qual a importância de resolver isso agora?"
-                ]
-            )
-            db.add(default_playbook)
-            await db.commit()
-        
-        return ClientResponse.from_orm(client)
-        
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/", response_model=ClientListResponse)
-async def list_clients(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    status: Optional[ClientStatus] = None,
-    search: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
-):
-    """List all clients with pagination and filtering"""
-    try:
-        query = select(Client)
-        
-        # Apply filters
-        if status:
-            query = query.where(Client.status == status)
-        
-        if search:
-            query = query.where(
-                Client.name.ilike(f"%{search}%") |
-                Client.domain.ilike(f"%{search}%") |
-                Client.description.ilike(f"%{search}%")
-            )
-        
-        # Get total count
-        count_query = select(func.count()).select_from(query.subquery())
-        total_result = await db.execute(count_query)
-        total = total_result.scalar()
-        
-        # Apply pagination and ordering
-        query = query.order_by(Client.created_at.desc()).offset(skip).limit(limit)
-        result = await db.execute(query)
-        clients = result.scalars().all()
-        
-        return ClientListResponse(
-            clients=[ClientResponse.from_orm(client) for client in clients],
-            total=total,
-            skip=skip,
-            limit=limit
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{client_id}", response_model=ClientResponse)
-async def get_client(
-    client_id: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """Get a specific client by ID"""
-    try:
-        result = await db.execute(select(Client).where(Client.id == client_id))
-        client = result.scalar_one_or_none()
-        
-        if not client:
-            raise HTTPException(status_code=404, detail="Client not found")
-        
-        return ClientResponse.from_orm(client)
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+    
+    return ClientResponse.model_validate(client)
 
 @router.put("/{client_id}", response_model=ClientResponse)
 async def update_client(
@@ -187,191 +141,35 @@ async def update_client(
     db: AsyncSession = Depends(get_db)
 ):
     """Update an existing client"""
-    try:
-        result = await db.execute(select(Client).where(Client.id == client_id))
-        client = result.scalar_one_or_none()
-        
-        if not client:
-            raise HTTPException(status_code=404, detail="Client not found")
-        
-        # Check if domain conflicts with another client
-        if client_data.domain and client_data.domain != client.domain:
-            existing_client = await db.execute(
-                select(Client).where(
-                    Client.domain == client_data.domain,
-                    Client.id != client_id
-                )
-            )
-            if existing_client.scalar_one_or_none():
-                raise HTTPException(
-                    status_code=400,
-                    detail="Domain already exists"
-                )
-        
-        # Update client fields
-        update_data = client_data.dict(exclude_unset=True)
-        for field, value in update_data.items():
+    stmt = select(Client).where(Client.id == client_id)
+    result = await db.execute(stmt)
+    client = result.scalar_one_or_none()
+    
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    # Update fields
+    update_data = client_data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        if hasattr(client, field):
             setattr(client, field, value)
-        
-        client.updated_at = datetime.utcnow()
-        
-        await db.commit()
-        await db.refresh(client)
-        
-        return ClientResponse.from_orm(client)
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
+    
+    await db.commit()
+    await db.refresh(client)
+    
+    return ClientResponse.model_validate(client)
 
 @router.delete("/{client_id}")
-async def delete_client(
-    client_id: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """Delete a client (soft delete by setting status to inactive)"""
-    try:
-        result = await db.execute(select(Client).where(Client.id == client_id))
-        client = result.scalar_one_or_none()
-        
-        if not client:
-            raise HTTPException(status_code=404, detail="Client not found")
-        
-        # Soft delete by setting status to inactive
-        client.status = ClientStatus.INACTIVE
-        client.updated_at = datetime.utcnow()
-        
-        await db.commit()
-        
-        return {"message": "Client deleted successfully"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{client_id}/stats")
-async def get_client_stats(
-    client_id: str,
-    days: int = Query(30, ge=1, le=365),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get client statistics"""
-    try:
-        # Verify client exists
-        result = await db.execute(select(Client).where(Client.id == client_id))
-        client = result.scalar_one_or_none()
-        
-        if not client:
-            raise HTTPException(status_code=404, detail="Client not found")
-        
-        # Calculate date range
-        from_date = datetime.utcnow() - timedelta(days=days)
-        
-        # Get message statistics
-        total_messages = await db.execute(
-            select(func.count(Message.id)).where(
-                Message.client_id == client_id,
-                Message.timestamp >= from_date
-            )
-        )
-        
-        qualified_leads = await db.execute(
-            select(func.count(Message.id)).where(
-                Message.client_id == client_id,
-                Message.status == MessageStatus.QUALIFIED,
-                Message.timestamp >= from_date
-            )
-        )
-        
-        scheduled_appointments = await db.execute(
-            select(func.count(Message.id)).where(
-                Message.client_id == client_id,
-                Message.status == MessageStatus.SCHEDULED,
-                Message.timestamp >= from_date
-            )
-        )
-        
-        unique_users = await db.execute(
-            select(func.count(func.distinct(Message.user_id))).where(
-                Message.client_id == client_id,
-                Message.timestamp >= from_date
-            )
-        )
-        
-        return {
-            "client_id": client_id,
-            "period_days": days,
-            "total_messages": total_messages.scalar(),
-            "unique_users": unique_users.scalar(),
-            "qualified_leads": qualified_leads.scalar(),
-            "scheduled_appointments": scheduled_appointments.scalar(),
-            "conversion_rate": (
-                qualified_leads.scalar() / unique_users.scalar() * 100
-                if unique_users.scalar() > 0 else 0
-            )
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/{client_id}/activate")
-async def activate_client(
-    client_id: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """Activate a client"""
-    try:
-        result = await db.execute(select(Client).where(Client.id == client_id))
-        client = result.scalar_one_or_none()
-        
-        if not client:
-            raise HTTPException(status_code=404, detail="Client not found")
-        
-        client.status = ClientStatus.ACTIVE
-        client.updated_at = datetime.utcnow()
-        
-        await db.commit()
-        
-        return {"message": "Client activated successfully"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/{client_id}/suspend")
-async def suspend_client(
-    client_id: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """Suspend a client"""
-    try:
-        result = await db.execute(select(Client).where(Client.id == client_id))
-        client = result.scalar_one_or_none()
-        
-        if not client:
-            raise HTTPException(status_code=404, detail="Client not found")
-        
-        client.status = ClientStatus.SUSPENDED
-        client.updated_at = datetime.utcnow()
-        
-        await db.commit()
-        
-        return {"message": "Client suspended successfully"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+async def delete_client(client_id: str, db: AsyncSession = Depends(get_db)):
+    """Delete a client"""
+    stmt = select(Client).where(Client.id == client_id)
+    result = await db.execute(stmt)
+    client = result.scalar_one_or_none()
+    
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    await db.delete(client)
+    await db.commit()
+    
+    return {"message": "Client deleted successfully"}

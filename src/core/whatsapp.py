@@ -66,7 +66,7 @@ class WhatsAppSender:
             
         return clean_number
 
-    def _split_message(self, text: str, max_length: int = 300) -> List[str]:
+    def _split_message(self, text: str, max_length: int = 2000) -> List[str]:
         """
         Divide uma mensagem em partes menores
         
