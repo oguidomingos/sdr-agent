@@ -11,9 +11,9 @@ engine = create_async_engine(settings.DATABASE_URL, echo=True)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 Base = declarative_base()
 
-class MessageDirection(enum.Enum):
-    INBOUND = "INBOUND"
-    OUTBOUND = "OUTBOUND"
+class MessageDirection(str, enum.Enum):
+    INBOUND = "inbound"
+    OUTBOUND = "outbound"
 
 class MessageStatus(enum.Enum):
     QUALIFIED = "qualified"
