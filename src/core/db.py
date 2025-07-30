@@ -40,7 +40,7 @@ class Client(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text)
     domain = Column(String(255), unique=True)
-    status = Column(Enum(ClientStatus), default=ClientStatus.TRIAL)
+    status = Column(Enum(ClientStatus, values_callable=lambda obj: [e.value for e in obj]), default=ClientStatus.TRIAL)
     
     # API Configuration
     evolution_api_url = Column(String(500))
@@ -129,11 +129,11 @@ class Message(Base):
     client_id = Column(String, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(String, index=True)
     user_name = Column(String(255))
-    message_direction = Column(Enum(MessageDirection, name='message_direction'))
+    message_direction = Column(Enum(MessageDirection, name='message_direction', values_callable=lambda obj: [e.value for e in obj]))
     content = Column(Text)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     message_metadata = Column(JSON)
-    status = Column(Enum(MessageStatus, name='message_status'), default=MessageStatus.NONE)
+    status = Column(Enum(MessageStatus, name='message_status', values_callable=lambda obj: [e.value for e in obj]), default=MessageStatus.NONE)
     
     # Message Context
     conversation_stage = Column(String(50))  # e.g., 'situation', 'problem', 'implication'

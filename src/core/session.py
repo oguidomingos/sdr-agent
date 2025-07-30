@@ -133,6 +133,7 @@ class SessionManager:
                         Message(
                             user_id=msg.user_id,
                             user_name=msg.user_name or "",
+                            message_direction=msg.message_direction,
                             content=msg.content,
                             timestamp=msg.timestamp,
                             metadata=msg.message_metadata or {}
@@ -191,6 +192,13 @@ class SessionManager:
                 if attempt == 2:
                     print("Todas as tentativas de salvar no Redis falharam")
 
+    async def _get_default_client_id(self) -> Optional[str]:
+        """Get the default client ID from the database"""
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(Client).where(Client.domain == "demo.sdr-agent.com"))
+            client = result.scalar_one_or_none()
+            return client.id if client else None
+
     async def update_session(
         self, 
         user_id: str,
@@ -211,12 +219,17 @@ class SessionManager:
             SessionContext: Updated session
         """
         effective_client_id = client_id or (self.client_settings.client_id if self.client_settings else None)
+        
+        # If no client_id is provided, use the default demo client
+        if not effective_client_id:
+            effective_client_id = await self._get_default_client_id()
+            
         try:
             # Save message to database with client isolation
             async with AsyncSessionLocal() as session:
                 db_message = DBMessage(
                     id=str(uuid.uuid4()),
-                    client_id=effective_client_id or "default",
+                    client_id=effective_client_id,
                     user_id=user_id,
                     user_name=message.user_name,
                     message_direction=MessageDirection.INBOUND if not message.metadata.get("from_me") else MessageDirection.OUTBOUND, # Renomeado para corresponder ao banco de dados
@@ -240,6 +253,7 @@ class SessionManager:
                 Message(
                     user_id=msg.user_id,
                     user_name=msg.user_name or "",
+                    message_direction=msg.message_direction,
                     content=msg.content,
                     timestamp=msg.timestamp,
                     metadata=msg.message_metadata or {}

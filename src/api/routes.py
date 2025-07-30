@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional
 import json
 from pydantic import ValidationError
 
-from src.types.schemas import WebhookData, Message, WhatsAppMessage, GeminiRequest
+from src.types.schemas import WebhookData, Message, WhatsAppMessage, GeminiRequest, MessageDirection
 from src.core.message import MessageHandler
 from src.core.session import SessionManager
 from src.core.gemini import GeminiClient
@@ -116,37 +116,29 @@ async def handle_webhook(
             message=bot_message
         )
 
-        # Se for primeira mensagem do usuário, envia saudação
-        session_messages = await session_manager.get_session_messages(sender_number)
-        print(f"📊 Mensagens na sessão: {len(session_messages)}")
+        # Envia resposta do Gemini em partes se necessário
+        print(f"📤 Enviando resposta do Gemini...")
+        message_parts = whatsapp_sender._split_message(response.content)
+        print(f"📝 Partes da mensagem: {len(message_parts)}")
         
-        if len(session_messages) <= 2:  # Considera primeira mensagem + resposta
-            print(f"👋 Enviando saudação...")
-            await message_handler.send_greeting(sender_number, push_name)
-        else:
-            # Envia resposta do Gemini em partes se necessário
-            print(f"📤 Enviando resposta do Gemini...")
-            message_parts = whatsapp_sender._split_message(response.content)
-            print(f"📝 Partes da mensagem: {len(message_parts)}")
-            
-            for i, part in enumerate(message_parts):
-                print(f"📤 Enviando parte {i+1}/{len(message_parts)}: {part[:50]}...")
-                whatsapp_message = WhatsAppMessage(
-                    number=sender_number,
-                    message=part,
-                    metadata={"instance": webhook_data.get("instance", "default")}
-                )
-                typing_duration = (
-                    5 if len(part) < 50 else
-                    7 if len(part) < 200 else
-                    10
-                )
-                result = await whatsapp_sender.send_message(
-                    message=whatsapp_message,
-                    typing_duration=typing_duration,
-                    cooldown=2  # 2 segundos entre partes
-                )
-                print(f"✅ Resultado do envio: {result}")
+        for i, part in enumerate(message_parts):
+            print(f"📤 Enviando parte {i+1}/{len(message_parts)}: {part[:50]}...")
+            whatsapp_message = WhatsAppMessage(
+                number=sender_number,
+                message=part,
+                metadata={"instance": webhook_data.get("instance", "default")}
+            )
+            typing_duration = (
+                5 if len(part) < 50 else
+                7 if len(part) < 200 else
+                10
+            )
+            result = await whatsapp_sender.send_message(
+                message=whatsapp_message,
+                typing_duration=typing_duration,
+                cooldown=2  # 2 segundos entre partes
+            )
+            print(f"✅ Resultado do envio: {result}")
         
         return {
             "status": "success",
