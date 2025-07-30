@@ -31,12 +31,17 @@ class WebhookData(BaseModel):
         }
 
 
+class MessageDirection(str, enum.Enum):
+    INBOUND = "inbound"
+    OUTBOUND = "outbound"
+
 class Message(BaseModel):
     """
     Modelo para mensagens processadas
     """
     user_id: str = Field(..., description="ID do usuário (número do WhatsApp)")
     user_name: str = Field(..., description="Nome do usuário")
+    message_direction: MessageDirection = Field(..., description="Direção da mensagem (entrada/saída)")
     content: str = Field(..., description="Conteúdo da mensagem")
     timestamp: datetime = Field(default_factory=datetime.now)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
@@ -382,7 +387,7 @@ class MessageHistory(BaseModel):
     client_id: str
     user_id: str
     user_name: Optional[str]
-    direction: str  # 'inbound' or 'outbound'
+    message_direction: str  # 'inbound' or 'outbound' - Renomeado para corresponder ao banco de dados
     content: str
     timestamp: datetime
     metadata: Optional[Dict[str, Any]]

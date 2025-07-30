@@ -153,6 +153,9 @@ class WhatsAppSender:
                     else:
                         typing_duration = 10  # long
                 
+                # Obtém o nome da instância dos metadados ou usa o padrão
+                instance_name = message.metadata.get('instance') if message.metadata else settings.DEFAULT_EVOLUTION_INSTANCE
+                
                 # Ativa o status de digitação antes de cada parte
                 try:
                     await self.send_typing_status(
@@ -175,8 +178,6 @@ class WhatsAppSender:
                     payload["metadata"] = message.metadata
                 
                 # Envia a requisição
-                # Obtém o nome da instância dos metadados ou usa o padrão
-                instance_name = message.metadata.get('instance') if message.metadata else settings.DEFAULT_INSTANCE
                 response = await self.client.post(
                     f"/message/sendText/{instance_name}",
                     json=payload
@@ -220,7 +221,7 @@ class WhatsAppSender:
         """
         try:
             if not instance:
-                instance = settings.SESSION_CONFIG.get('default_instance', 'default')
+                instance = settings.DEFAULT_EVOLUTION_INSTANCE
             
             # Formata o número
             formatted_number = self._format_number(number)
@@ -252,8 +253,10 @@ class WhatsAppSender:
         except Exception as e:
             print(f"Erro ao enviar status de digitação: {str(e)}")
             return False
+            
+        try:
             if not instance:
-                instance = settings.DEFAULT_INSTANCE
+                instance = settings.DEFAULT_EVOLUTION_INSTANCE
                 
             # Formata o número
             formatted_number = self._format_number(number)

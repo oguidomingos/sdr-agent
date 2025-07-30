@@ -219,7 +219,7 @@ class SessionManager:
                     client_id=effective_client_id or "default",
                     user_id=user_id,
                     user_name=message.user_name,
-                    direction=MessageDirection.INBOUND if not message.metadata.get("from_me") else MessageDirection.OUTBOUND,
+                    message_direction=MessageDirection.INBOUND if not message.metadata.get("from_me") else MessageDirection.OUTBOUND, # Renomeado para corresponder ao banco de dados
                     content=message.content,
                     timestamp=message.timestamp,
                     message_metadata=message.metadata

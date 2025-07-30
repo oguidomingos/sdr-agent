@@ -1,4 +1,3 @@
-
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy import Column, String, DateTime, JSON, Enum, Integer, Boolean, Text, ForeignKey, Index, text
@@ -13,8 +12,8 @@ AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=F
 Base = declarative_base()
 
 class MessageDirection(enum.Enum):
-    INBOUND = "inbound"
-    OUTBOUND = "outbound"
+    INBOUND = "INBOUND"
+    OUTBOUND = "OUTBOUND"
 
 class MessageStatus(enum.Enum):
     QUALIFIED = "qualified"
@@ -130,11 +129,11 @@ class Message(Base):
     client_id = Column(String, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(String, index=True)
     user_name = Column(String(255))
-    direction = Column(Enum(MessageDirection))
+    message_direction = Column(Enum(MessageDirection, name='message_direction'))
     content = Column(Text)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     message_metadata = Column(JSON)
-    status = Column(Enum(MessageStatus), default=MessageStatus.NONE)
+    status = Column(Enum(MessageStatus, name='message_status'), default=MessageStatus.NONE)
     
     # Message Context
     conversation_stage = Column(String(50))  # e.g., 'situation', 'problem', 'implication'

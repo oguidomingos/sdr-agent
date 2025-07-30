@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Header, Request, Response
+from fastapi import APIRouter, HTTPException, Header, Request, Response
 from typing import Dict, Any, Optional
 import json
 from pydantic import ValidationError
@@ -9,17 +9,9 @@ from src.core.session import SessionManager
 from src.core.gemini import GeminiClient
 from src.core.whatsapp import WhatsAppSender
 from src.config.settings import settings
-from src.api.clients import router as clients_router
 
-# Inicializa a aplicação FastAPI
-app = FastAPI(
-    title="SDR Agent API",
-    description="API para processamento de mensagens do WhatsApp usando IA",
-    version="1.0.0"
-)
-
-# Include routers
-app.include_router(clients_router)
+# Inicializa o router
+router = APIRouter()
 
 # Inicializa os componentes principais
 message_handler = MessageHandler()
@@ -28,42 +20,10 @@ gemini_client = GeminiClient()
 whatsapp_sender = WhatsAppSender()
 
 
-# Middleware para logging
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    """
-    Middleware para logging de requisições
-    """
-    print(f"\n=== Incoming Request ===")
-    print(f"Method: {request.method}")
-    print(f"URL: {request.url}")
-    print("Headers:", dict(request.headers))
-    
-    # Log do corpo da requisição para debugging
-    if request.method == "POST":
-        body = await request.body()
-        try:
-            body_str = body.decode()
-            print(f"Request body: {body_str}")
-            # Recria o stream do body para o FastAPI
-            request._body = body
-        except Exception as e:
-            print(f"Erro ao decodificar request body: {e}")
-            
-        # Salva o payload em um arquivo
-        try:
-            with open("last_payload.json", "w") as f:
-                f.write(body_str)
-        except Exception as e:
-            print(f"Erro ao salvar payload em arquivo: {str(e)}")
-    
-    print("=== End Request ===\n")
-    
-    response = await call_next(request)
-    return response
+# Middleware será movido para o main.py
 
 
-@app.post("/webhook/whatsapp")
+@router.post("/webhook/whatsapp")
 async def handle_webhook(
     request: Request,
     x_hub_signature: Optional[str] = Header(None)
@@ -72,8 +32,10 @@ async def handle_webhook(
     Endpoint principal para receber webhooks da Evolution API
     """
     try:
+        print(f"🚀 Iniciando processamento do webhook...")
         # Extrai os dados do webhook
         webhook_data = await request.json()
+        print(f"📦 Dados do webhook: {webhook_data}")
         
         # Extrai o número do remetente
         # Extrai dados da mensagem
@@ -86,17 +48,20 @@ async def handle_webhook(
 
         # Recupera a sessão existente
         current_session = await session_manager.get_session(sender_number)
+        print(f"📋 Sessão atual: {current_session}")
         
         # Cria mensagem do usuário
         message = Message(
             user_id=sender_number,
             user_name=push_name,
+            message_direction=MessageDirection.INBOUND,
             content=user_message,
             metadata={
                 "from_me": False,
                 "instance": webhook_data.get("instance", "default")
             }
         )
+        print(f"💬 Mensagem criada: {message}")
         
         # Atualiza a sessão com a nova mensagem
         session = await session_manager.update_session(
@@ -107,23 +72,32 @@ async def handle_webhook(
                 "instance": webhook_data.get("instance", "default")
             }
         )
+        print(f"📝 Sessão atualizada: {session}")
 
         # Se for primeira mensagem, envia saudação
+        print(f"🔍 Verificando se é primeira mensagem: current_session = {current_session}")
         if not current_session:
+            print(f"👋 É primeira mensagem! Enviando saudação...")
             await message_handler.send_greeting(
                 user_id=sender_number,
                 name=push_name,
                 instance=webhook_data.get("instance", "default")
             )
             return {"status": "greeting_sent"}
+        else:
+            print(f"🔄 Não é primeira mensagem, continuando processamento...")
 
         # Processa a mensagem com o Gemini
+        print(f"🔄 Processando mensagem com Gemini...")
         response = await gemini_client.process_session(
             session=session,
             user_message=user_message
         )
 
+        print(f"📝 Resposta do Gemini: {response}")
+        
         if not response:
+            print(f"❌ Erro: Resposta do Gemini é None")
             raise HTTPException(
                 status_code=500,
                 detail="Erro ao gerar resposta"
@@ -133,6 +107,7 @@ async def handle_webhook(
         bot_message = Message(
             user_id=sender_number,
             user_name="ROI Gem",
+            message_direction=MessageDirection.OUTBOUND,
             content=response.content,
             metadata={"from_me": True}
         )
@@ -143,26 +118,35 @@ async def handle_webhook(
 
         # Se for primeira mensagem do usuário, envia saudação
         session_messages = await session_manager.get_session_messages(sender_number)
+        print(f"📊 Mensagens na sessão: {len(session_messages)}")
+        
         if len(session_messages) <= 2:  # Considera primeira mensagem + resposta
+            print(f"👋 Enviando saudação...")
             await message_handler.send_greeting(sender_number, push_name)
         else:
             # Envia resposta do Gemini em partes se necessário
+            print(f"📤 Enviando resposta do Gemini...")
             message_parts = whatsapp_sender._split_message(response.content)
-            for part in message_parts:
+            print(f"📝 Partes da mensagem: {len(message_parts)}")
+            
+            for i, part in enumerate(message_parts):
+                print(f"📤 Enviando parte {i+1}/{len(message_parts)}: {part[:50]}...")
                 whatsapp_message = WhatsAppMessage(
                     number=sender_number,
-                    message=part
+                    message=part,
+                    metadata={"instance": webhook_data.get("instance", "default")}
                 )
                 typing_duration = (
                     5 if len(part) < 50 else
                     7 if len(part) < 200 else
                     10
                 )
-                await whatsapp_sender.send_message(
+                result = await whatsapp_sender.send_message(
                     message=whatsapp_message,
                     typing_duration=typing_duration,
                     cooldown=2  # 2 segundos entre partes
                 )
+                print(f"✅ Resultado do envio: {result}")
         
         return {
             "status": "success",
@@ -180,7 +164,7 @@ async def handle_webhook(
         )
 
 
-@app.get("/health")
+@router.get("/health")
 async def health_check() -> Dict[str, str]:
     """
     Endpoint para verificação de saúde da API
@@ -188,7 +172,7 @@ async def health_check() -> Dict[str, str]:
     return {"status": "healthy"}
 
 
-@app.get("/sessions/{user_id}")
+@router.get("/sessions/{user_id}")
 async def get_session_data(user_id: str) -> Dict[str, Any]:
     """
     Endpoint para consultar dados de uma sessão
@@ -209,7 +193,7 @@ async def get_session_data(user_id: str) -> Dict[str, Any]:
     }
 
 
-@app.delete("/sessions/{user_id}")
+@router.delete("/sessions/{user_id}")
 async def delete_session(user_id: str) -> Dict[str, str]:
     """
     Endpoint para deletar uma sessão

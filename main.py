@@ -63,8 +63,11 @@ app.add_middleware(
 )
 
 # Import and include API routers
-from src.api.routes import app as legacy_routes
+from src.api.routes import router as webhook_router
 from src.api.clients import router as clients_router
+
+# Include webhook routes
+app.include_router(webhook_router)
 
 # Include new multi-client API routes
 app.include_router(clients_router)
@@ -92,86 +95,7 @@ async def root():
         "webhook": "/webhook/whatsapp"
     }
 
-# Webhook endpoint for WhatsApp messages
-@app.post("/webhook/whatsapp")
-async def webhook_whatsapp(request: Request) -> Dict[str, Any]:
-    """Webhook endpoint for WhatsApp messages from Evolution API"""
-    try:
-        # Get webhook data
-        webhook_data = await request.json()
-        
-        print(f"=== Webhook Received ===")
-        print(f"Instance: {webhook_data.get('instance', 'unknown')}")
-        
-        # Basic validation - check if it's a message
-        if "data" not in webhook_data:
-            return {"status": "ignored", "reason": "no_data"}
-            
-        data = webhook_data["data"]
-        
-        # Check if it's an incoming message
-        if "key" not in data or "message" not in data:
-            return {"status": "ignored", "reason": "not_message"}
-            
-        # Check if it's from user (not from us)
-        if data["key"].get("fromMe", False):
-            return {"status": "ignored", "reason": "from_me"}
-            
-        # Extract message content
-        message_content = data["message"].get("conversation", "")
-        if not message_content:
-            # Try extended text message
-            if "extendedTextMessage" in data["message"]:
-                message_content = data["message"]["extendedTextMessage"].get("text", "")
-        
-        if not message_content:
-            return {"status": "ignored", "reason": "no_content"}
-            
-        # Extract sender info
-        sender_number = data["key"]["remoteJid"]
-        sender_name = data.get("pushName", "User")
-        instance_name = webhook_data.get("instance", "")
-        
-        print(f"Message from {sender_name} ({sender_number}): {message_content}")
-        print(f"Instance: {instance_name}")
-        
-        # Find client by instance name
-        from src.core.db import AsyncSessionLocal, Client, init_db
-        from sqlalchemy import select
-        
-        try:
-            async with AsyncSessionLocal() as session:
-                result = await session.execute(
-                    select(Client).where(Client.evolution_instance == instance_name)
-                )
-                client = result.scalar_one_or_none()
-                
-                if not client:
-                    print(f"⚠️  No client found for instance: {instance_name}")
-                    return {"status": "error", "reason": "no_client_found", "instance": instance_name}
-        except Exception as db_error:
-            print(f"⚠️  Database error: {db_error}")
-            return {"status": "error", "reason": "database_error", "error": str(db_error)}
-        
-        print(f"✅ Found client: {client.name} (ID: {client.id})")
-        
-        # TODO: Process message with AI and send response
-        # For now, just acknowledge receipt with client info
-        return {
-            "status": "received",
-            "client_id": client.id,
-            "client_name": client.name,
-            "instance": instance_name,
-            "sender": sender_number,
-            "message": message_content,
-            "next_step": "process_with_ai"
-        }
-        
-    except Exception as e:
-        print(f"❌ Webhook error: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return {"status": "error", "error": str(e)}
+# Webhook endpoint is handled by src/api/routes.py
 
 
 def main():
