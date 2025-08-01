@@ -3,11 +3,6 @@
   "outputDirectory": "frontend/dist",
   "devCommand": "cd frontend && npm run dev -- --port $PORT",
   "installCommand": "cd frontend && npm install && cd .. && pip install -r requirements.txt",
-  "functions": {
-    "api/index.py": {
-      "runtime": "python3.12"
-    }
-  },
   "rewrites": [
     {
       "source": "/api/(.*)",
