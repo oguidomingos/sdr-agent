@@ -18,3 +18,5 @@ passlib>=1.7.4
 PyJWT>=2.8.0
 fastapi-cors>=0.0.6
 email-validator>=2.0.0
+supabase>=2.3.0
+upstash-redis>=0.15.0

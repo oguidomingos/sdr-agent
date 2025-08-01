@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "vercel": {
+      "command": "uvx",
+      "args": ["mcp-server-vercel@latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "supabase": {
+      "command": "uvx", 
+      "args": ["mcp-server-supabase@latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
