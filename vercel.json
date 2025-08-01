@@ -3,10 +3,27 @@
   "outputDirectory": "frontend/dist",
   "devCommand": "cd frontend && npm run dev -- --port $PORT",
   "installCommand": "cd frontend && npm install",
+  "functions": {
+    "api/*.py": {
+      "runtime": "python3.9"
+    }
+  },
   "rewrites": [
     {
+      "source": "/api/auth/(.*)",
+      "destination": "/api/auth"
+    },
+    {
+      "source": "/api/clients/(.*)",
+      "destination": "/api/clients"
+    },
+    {
+      "source": "/api/webhook/(.*)",
+      "destination": "/api/webhook"
+    },
+    {
       "source": "/api/(.*)",
-      "destination": "/api/$1"
+      "destination": "/api/index"
     },
     {
       "source": "/(.*)",

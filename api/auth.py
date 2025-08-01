@@ -6,14 +6,10 @@ import sys
 # Add the parent directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import settings
 from src.config.settings import settings
+from src.api.auth_routes import router as auth_router
 
-app = FastAPI(
-    title="SDR Agent API",
-    description="Multi-tenant SDR Agent API",
-    version="2.0.0"
-)
+app = FastAPI()
 
 # Configure CORS
 app.add_middleware(
@@ -24,18 +20,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-async def root():
-    return {
-        "message": "SDR Agent API", 
-        "version": "2.0.0",
-        "status": "healthy"
-    }
+# Include auth routes
+app.include_router(auth_router)
 
-@app.get("/health")
-async def health():
-    return {"status": "healthy", "version": "2.0.0"}
-
-# Handler para Vercel
 def handler(request):
     return app
