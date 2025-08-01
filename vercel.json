@@ -5,7 +5,7 @@
   "installCommand": "cd frontend && npm install && cd .. && pip install -r requirements.txt",
   "functions": {
     "api/index.py": {
-      "runtime": "python3.9"
+      "runtime": "@vercel/python"
     }
   },
   "rewrites": [
