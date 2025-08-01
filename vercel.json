@@ -5,18 +5,6 @@
   "installCommand": "cd frontend && npm install",
   "rewrites": [
     {
-      "source": "/api/auth/(.*)",
-      "destination": "/api/auth"
-    },
-    {
-      "source": "/api/clients/(.*)",
-      "destination": "/api/clients"
-    },
-    {
-      "source": "/api/webhook/(.*)",
-      "destination": "/api/webhook"
-    },
-    {
       "source": "/api/(.*)",
       "destination": "/api/index"
     },
