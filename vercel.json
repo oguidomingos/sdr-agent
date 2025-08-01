@@ -2,7 +2,7 @@
   "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
   "devCommand": "cd frontend && npm run dev -- --port $PORT",
-  "installCommand": "cd frontend && npm install && cd .. && pip install -r requirements.txt",
+  "installCommand": "cd frontend && npm install",
   "rewrites": [
     {
       "source": "/api/(.*)",
