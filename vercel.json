@@ -3,11 +3,6 @@
   "outputDirectory": "frontend/dist",
   "devCommand": "cd frontend && npm run dev -- --port $PORT",
   "installCommand": "cd frontend && npm install",
-  "functions": {
-    "api/*.py": {
-      "runtime": "python3.9"
-    }
-  },
   "rewrites": [
     {
       "source": "/api/auth/(.*)",
