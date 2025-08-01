@@ -1,4 +1,4 @@
-import { useClient } from '@/contexts/ClientContext';
+import { useClientContext } from '@/contexts/ClientContext';
 import {
   Select,
   SelectContent,
@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Building2, Loader2 } from 'lucide-react';
 
 export function ClientSelector() {
-  const { selectedClient, setSelectedClient, clients, isLoading } = useClient();
+  const { selectedClient, setSelectedClient, clients, isLoading } = useClientContext();
 
   if (isLoading) {
     return (

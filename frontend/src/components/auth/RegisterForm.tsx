@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,6 +23,7 @@ export function RegisterForm({ onToggleMode }: RegisterFormProps) {
   
   const { register } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -30,9 +32,25 @@ export function RegisterForm({ onToggleMode }: RegisterFormProps) {
     });
   };
 
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Email validation
+    if (!validateEmail(formData.email)) {
+      toast({
+        title: "Invalid email",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Password confirmation validation
     if (formData.password !== formData.confirmPassword) {
       toast({
         title: "Password mismatch",
@@ -42,10 +60,11 @@ export function RegisterForm({ onToggleMode }: RegisterFormProps) {
       return;
     }
 
-    if (formData.password.length < 6) {
+    // Password length validation
+    if (formData.password.length < 8) {
       toast({
         title: "Password too short",
-        description: "Password must be at least 6 characters long",
+        description: "Password must be at least 8 characters long",
         variant: "destructive",
       });
       return;
@@ -64,6 +83,8 @@ export function RegisterForm({ onToggleMode }: RegisterFormProps) {
         title: "Registration successful",
         description: "Welcome! Your account has been created.",
       });
+      // Redirect to dashboard after successful registration (AuthContext already logs in)
+      navigate('/app');
     } catch (error: any) {
       toast({
         title: "Registration failed",

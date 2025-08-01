@@ -1,9 +1,0 @@
-{
-  "name": "Teste WhatsApp Bot",
-  "description": "Cliente para teste do webhook",
-  "domain": "test.example.com",
-  "evolution_instance": "teste_whatsapp",
-  "agent_name": "Bot Teste",
-  "welcome_message": "Olá! Como posso ajudar você hoje?",
-  "create_default_playbook": true
-}

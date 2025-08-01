@@ -135,6 +135,7 @@ class ClientCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     domain: str = Field(..., min_length=1, max_length=255)
+    register_webhook: bool = Field(False, description="Whether to automatically register webhook after creation")
     
     # API Configuration
     evolution_api_url: Optional[str] = None
@@ -182,6 +183,7 @@ class ClientUpdate(BaseModel):
     description: Optional[str] = None
     domain: Optional[str] = Field(None, min_length=1, max_length=255)
     status: Optional[ClientStatus] = None
+    register_webhook: Optional[bool] = Field(None, description="Whether to register webhook after update")
     
     # API Configuration
     evolution_api_url: Optional[str] = None
@@ -259,6 +261,13 @@ class ClientResponse(BaseModel):
     # Timestamps
     created_at: datetime
     updated_at: datetime
+    
+    # Webhook status
+    has_webhook_configured: bool = Field(
+        default=False,
+        description="Indica se o webhook está configurado para este cliente",
+        json_schema_extra={"readOnly": True}
+    )
     
     class Config:
         from_attributes = True
@@ -408,3 +417,18 @@ class MessageHistoryResponse(BaseModel):
     total: int
     skip: int
     limit: int
+
+
+# Stats and Analytics Schemas
+class StatsResponse(BaseModel):
+    """Schema for client statistics responses"""
+    total_conversations: int = Field(description="Total number of conversations")
+    leads_qualified: int = Field(description="Number of qualified leads")
+    appointments_scheduled: int = Field(description="Number of scheduled appointments")
+    period_start: Optional[datetime] = Field(description="Start date of the period")
+    period_end: Optional[datetime] = Field(description="End date of the period")
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }

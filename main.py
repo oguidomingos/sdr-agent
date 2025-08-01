@@ -65,6 +65,8 @@ app.add_middleware(
 # Import and include API routers
 from src.api.routes import router as legacy_webhook_router
 from src.api.clients import router as clients_router
+from src.api.playbooks import router as playbooks_router
+from src.api.messages import router as messages_router
 from src.api.auth_routes import router as auth_router, client_router
 from src.api.webhook_routes import router as webhook_router
 
@@ -78,8 +80,13 @@ app.include_router(webhook_router)
 # Include legacy webhook routes (for backward compatibility)
 app.include_router(legacy_webhook_router, prefix="/legacy")
 
-# Include legacy client API routes
-app.include_router(clients_router)
+# Legacy client API routes removed - using auth_routes client_router instead
+
+# Include playbook API routes
+app.include_router(playbooks_router)
+
+# Include messages API routes
+app.include_router(messages_router)
 
 # Health check endpoint
 @app.get("/health")

@@ -1,4 +1,4 @@
-import { useClient } from '@/contexts/ClientContext';
+import { useClientContext } from '@/contexts/ClientContext';
 import { useQuery } from '@tanstack/react-query';
 import { dashboardApi, conversationsApi } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -77,7 +77,7 @@ const getStatusBadge = (status?: string) => {
 };
 
 export default function Dashboard() {
-  const { selectedClient } = useClient();
+  const { selectedClient } = useClientContext();
 
   // Fetch dashboard stats
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery({

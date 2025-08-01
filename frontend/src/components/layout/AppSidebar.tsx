@@ -40,13 +40,8 @@ const navigationItems = [
     items: [
       {
         title: 'Dashboard',
-        url: '/',
+        url: '/app',
         icon: LayoutDashboard,
-      },
-      {
-        title: 'Conversas',
-        url: '/conversations',
-        icon: MessageSquare,
       },
     ],
   },
@@ -55,18 +50,13 @@ const navigationItems = [
     items: [
       {
         title: 'Clientes',
-        url: '/clients',
+        url: '/app/clients',
         icon: Building2,
       },
       {
         title: 'Playbooks',
-        url: '/playbooks',
+        url: '/app/playbooks',
         icon: FileText,
-      },
-      {
-        title: 'Usuários',
-        url: '/users',
-        icon: Users,
       },
     ],
   },
@@ -75,7 +65,7 @@ const navigationItems = [
     items: [
       {
         title: 'Relatórios',
-        url: '/reports',
+        url: '/app/reports',
         icon: BarChart3,
       },
     ],
@@ -85,7 +75,7 @@ const navigationItems = [
     items: [
       {
         title: 'Configurações',
-        url: '/settings',
+        url: '/app/settings',
         icon: Settings,
       },
     ],
@@ -96,8 +86,8 @@ export function AppSidebar() {
   const location = useLocation();
 
   const isActive = (url: string) => {
-    if (url === '/') {
-      return location.pathname === '/';
+    if (url === '/app') {
+      return location.pathname === '/app' || location.pathname === '/app/';
     }
     return location.pathname.startsWith(url);
   };

@@ -1,9 +1,10 @@
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ClientProvider } from "./contexts/ClientContext";
+import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { AppLayout } from "./components/layout/AppLayout";
 import Dashboard from "./pages/Dashboard";
 import Conversations from "./pages/Conversations";
@@ -13,6 +14,8 @@ import Reports from "./pages/Reports";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
+import LoginPage from "./pages/Login";
+import RegisterPage from "./pages/Register";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,15 +35,24 @@ const App = () => (
           <Toaster />
           <BrowserRouter>
             <Routes>
-              <Route path="/" element={<AppLayout />}>
+              <Route path="/login" element={
+                <ProtectedRoute requireAuth={false}>
+                  <LoginPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/register" element={
+                <ProtectedRoute requireAuth={false}>
+                  <RegisterPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/app/*" element={<AppLayout />}>
                 <Route index element={<Dashboard />} />
-                <Route path="conversations" element={<Conversations />} />
                 <Route path="clients" element={<Clients />} />
                 <Route path="playbooks" element={<Playbooks />} />
                 <Route path="reports" element={<Reports />} />
-                <Route path="users" element={<Users />} />
                 <Route path="settings" element={<Settings />} />
               </Route>
+              <Route path="/" element={<Navigate to="/app" />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

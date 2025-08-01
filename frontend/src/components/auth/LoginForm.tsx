@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,9 +18,26 @@ export function LoginForm({ onToggleMode }: LoginFormProps) {
   
   const { login } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
+
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Email validation
+    if (!validateEmail(email)) {
+      toast({
+        title: "Invalid email",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -28,6 +46,8 @@ export function LoginForm({ onToggleMode }: LoginFormProps) {
         title: "Login successful",
         description: "Welcome back!",
       });
+      // Redirect to dashboard after successful login
+      navigate('/app');
     } catch (error: any) {
       toast({
         title: "Login failed",

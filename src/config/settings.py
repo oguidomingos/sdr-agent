@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     LOG_RETENTION_DAYS: int = 30
     
     # CORS Settings
-    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,http://sdr_frontend:80,http://frontend:80"
     CORS_CREDENTIALS: bool = True
     
     # File Upload Settings

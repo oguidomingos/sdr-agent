@@ -54,7 +54,7 @@ class User(Base):
     
     # Subscription/Plan info
     plan = Column(String(50), default="free")  # free, basic, premium
-    max_clients = Column(Integer, default=3)  # limit based on plan
+    max_clients = Column(Integer, default=10)  # limit based on plan (increased for testing)
     
     # Settings
     timezone = Column(String(50), default="UTC")
@@ -91,6 +91,9 @@ class Client(Base):
     description = Column(Text)
     domain = Column(String(255), unique=True)
     status = Column(Enum(ClientStatus, values_callable=lambda obj: [e.value for e in obj]), default=ClientStatus.TRIAL)
+    
+    # WhatsApp Configuration
+    whatsapp_number = Column(String(20))  # Número do WhatsApp conectado
     
     # Evolution API Configuration
     evolution_api_url = Column(String(500))
@@ -264,23 +267,45 @@ async def get_db():
 
 async def init_db():
     """Initialize database tables and create indexes"""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        
-        # Create additional indexes for performance (without CONCURRENTLY in transaction)
-        try:
-            await conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_messages_client_timestamp 
-                ON messages (client_id, timestamp DESC);
-            """))
+    try:
+        # Use begin() and explicitly commit to ensure tables are persisted
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            print("✅ Base tables created")
             
-            await conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_messages_user_recent 
-                ON messages (user_id, timestamp DESC) 
-                WHERE timestamp > NOW() - INTERVAL '30 days';
-            """))
+        # Verify tables were created
+        async with engine.connect() as conn:
+            result = await conn.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
+            tables = [row[0] for row in result.fetchall()]
+            print(f"📋 Tables in database: {tables}")
+            
+            if not tables:
+                print("⚠️  No tables found, trying alternative creation method")
+                # Alternative method: create without transaction
+                await conn.run_sync(Base.metadata.create_all)
+                await conn.commit()
+        
+        # Create additional indexes in separate connection
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS idx_messages_client_timestamp 
+                    ON messages (client_id, timestamp DESC);
+                """))
+                
+                await conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS idx_messages_user_recent 
+                    ON messages (user_id, timestamp DESC) 
+                    WHERE timestamp > NOW() - INTERVAL '30 days';
+                """))
+                await conn.commit()
+                print("✅ Additional indexes created")
         except Exception as e:
             print(f"Warning: Could not create additional indexes: {e}")
+            
+    except Exception as e:
+        print(f"❌ Error creating database tables: {e}")
+        raise
 
 async def seed_default_data():
     """Seed database with default data for development"""

@@ -5,19 +5,24 @@ Sistema inteligente de automação para SDR (Sales Development Representative) q
 ## Características
 
 - Integração com WhatsApp via Evolution API
-- IA Generativa usando Google Gemini
+- IA Generativa usando Google Gemini  
 - Metodologia SPIN Selling
 - Gerenciamento de contexto e sessões
 - Processamento assíncrono com FastAPI
 - Cache com Redis
+- Frontend React com interface web completa
+- Sistema multi-tenant com autenticação JWT
 - Containerização com Docker
 
 ## Requisitos
 
 - Python 3.11+
+- Node.js 18+ (Para desenvolvimento do frontend)
+- PostgreSQL
 - Redis
 - Evolution API configurada
 - Chave de API do Google Gemini
+- Docker e Docker Compose (Para execução em containers)
 
 ## Configuração
 

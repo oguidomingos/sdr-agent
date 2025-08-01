@@ -1,17 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authApi } from '@/lib/api';
-
-interface User {
-  id: string;
-  email: string;
-  first_name: string;
-  last_name?: string;
-  status: string;
-  created_at: string;
-}
+import api from '@/lib/api';
+import { UserResponse } from '@/types/api';
 
 interface AuthContextType {
-  user: User | null;
+  user: UserResponse | null;
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
@@ -23,7 +16,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<UserResponse | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -34,6 +27,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const savedToken = localStorage.getItem('auth_token');
     if (savedToken) {
       setToken(savedToken);
+      // Set the token in axios defaults immediately
+      api.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
       // Verify token and fetch user data
       fetchUserData(savedToken);
     } else {
@@ -46,10 +41,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
       const userData = await authApi.me();
       setUser(userData);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch user data:', error);
-      // Token might be expired, clear it
-      logout();
+      // Token might be expired or invalid, clear it
+      if (error.response?.status === 401) {
+        logout();
+      }
     } finally {
       setIsLoading(false);
     }
@@ -63,6 +60,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { access_token } = response;
       setToken(access_token);
       localStorage.setItem('auth_token', access_token);
+      
+      // Set the token in axios defaults
+      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
       
       // Fetch user data
       await fetchUserData(access_token);
@@ -94,6 +94,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     localStorage.removeItem('auth_token');
     localStorage.removeItem('selectedClientId'); // Clear selected client as well
+    
+    // Clear the authorization header
+    delete api.defaults.headers.common['Authorization'];
   };
 
   return (

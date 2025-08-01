@@ -84,20 +84,20 @@ class GeminiClient:
         Returns:
             str: Prompt formatado
         """
-        # Importa e usa o prompt base configurado
-        from src.config.prompts import BASE_PROMPT, RESPONSES
-        base_prompt = BASE_PROMPT
+        # Usa system_prompt dos parâmetros se fornecido, senão usa o BASE_PROMPT
+        if parameters and parameters.get("system_prompt"):
+            base_prompt = parameters["system_prompt"]
+        else:
+            from src.config.prompts import BASE_PROMPT
+            base_prompt = BASE_PROMPT
+        
         # Adiciona o contexto se disponível
         if context:
-            base_prompt += f"\nContexto da conversa:\n{context}\n"
-        
-        # Adiciona parâmetros específicos se fornecidos
-        if parameters:
-            base_prompt += f"\nParâmetros adicionais:\n{json.dumps(parameters, indent=2)}\n"
+            base_prompt += f"\n\nContexto da conversa:\n{context}"
         
         # Adiciona a mensagem do usuário
-        base_prompt += f"\nMensagem do cliente: {user_message}\n"
-        base_prompt += "\nSua resposta:"
+        base_prompt += f"\n\nMensagem do cliente: {user_message}"
+        base_prompt += "\n\nSua resposta:"
         
         return base_prompt
 
@@ -167,21 +167,25 @@ class GeminiClient:
         # Formata o contexto da sessão
         context = self._format_context(session)
         
-        # Se for primeira mensagem, retorna as duas primeiras partes da saudação
-        if is_first_message and user_message.lower() in ['oi', 'olá', 'ola', 'hey']:
+        # Se for primeira mensagem, usa o welcome_prompt personalizado ou padrão
+        if is_first_message and user_message.lower() in ['oi', 'olá', 'ola', 'hey', 'hello', 'hi']:
             name = session.metadata.get('name', '')
-            greeting_part1 = RESPONSES['greeting_part1'].format(name=name)
-            greeting_part2 = RESPONSES['greeting_part2'].format(name=name)
             
-            # Retorna imediatamente um objeto GeminiResponse com as duas partes
+            # Usa welcome_prompt dos parâmetros se fornecido
+            if parameters and parameters.get('welcome_prompt'):
+                welcome_message = parameters['welcome_prompt']
+                if name:
+                    welcome_message = welcome_message.replace('[nome]', name).replace('[Nome]', name)
+            else:
+                # Fallback para mensagem padrão
+                welcome_message = f"Olá{f' {name}' if name else ''}! Como posso ajudá-lo hoje?"
+            
+            # Retorna mensagem de boas-vindas como texto simples
             return GeminiResponse(
-                content=json.dumps({
-                    'type': 'greeting',
-                    'parts': [greeting_part1, greeting_part2]
-                }),
+                content=welcome_message,
                 metadata={
                     'is_greeting': True,
-                    'parts_count': 2
+                    'personalized': bool(name)
                 }
             )
         else:

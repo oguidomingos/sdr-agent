@@ -20,6 +20,33 @@ client_router = APIRouter(prefix="/clients", tags=["Clients"], dependencies=[Dep
 
 # ================== AUTH ROUTES ==================
 
+from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi.security import HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from typing import List
+from datetime import datetime
+import logging
+
+from src.core.db import get_db, User, Client, AgentConfig, UserStatus
+from src.core.auth import auth_service, get_current_active_user, create_user_token
+from src.core.evolution_integration import evolution_service
+from src.types.auth_schemas import (
+    UserCreate, UserResponse, UserLogin, Token,
+    ClientCreateRequest, ClientResponse,
+    AgentConfigCreate, AgentConfigResponse, AgentConfigUpdate
+)
+from src.config.settings import settings
+
+router = APIRouter(prefix="/auth", tags=["Authentication"])
+client_router = APIRouter(prefix="/clients", tags=["Clients"], dependencies=[Depends(get_current_active_user)])
+
+# Configuração de logs
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# ================== AUTH ROUTES ==================
+
 @router.post("/register", response_model=UserResponse)
 async def register_user(
     user_data: UserCreate,
@@ -28,6 +55,7 @@ async def register_user(
     """
     Registra um novo usuário no sistema
     """
+    logger.info(f"Tentativa de registro do usuário: {user_data.email}")
     try:
         user = await auth_service.create_user(
             db=db,
@@ -39,11 +67,14 @@ async def register_user(
             language=user_data.language
         )
         
+        logger.info(f"Usuário registrado com sucesso: {user.email}")
         return UserResponse.model_validate(user)
         
-    except HTTPException:
+    except HTTPException as http_exception:
+        logger.error(f"Erro HTTP ao registrar usuário: {http_exception.detail}")
         raise
     except Exception as e:
+        logger.exception(f"Erro ao registrar usuário: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating user: {str(e)}"
@@ -57,11 +88,13 @@ async def login_user(
     """
     Autentica usuário e retorna token JWT
     """
+    logger.info(f"Tentativa de login do usuário: {user_credentials.email}")
     user = await auth_service.authenticate_user(
         db, user_credentials.email, user_credentials.password
     )
     
     if not user:
+        logger.warning(f"Falha no login: usuário não encontrado ou senha incorreta para {user_credentials.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -69,6 +102,7 @@ async def login_user(
         )
     
     if user.status != UserStatus.ACTIVE:
+        logger.warning(f"Falha no login: conta inativa para {user_credentials.email}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user account"
@@ -79,6 +113,7 @@ async def login_user(
     await db.commit()
     
     token_data = create_user_token(user)
+    logger.info(f"Usuário logado com sucesso: {user.email}")
     return Token(**token_data)
 
 @router.get("/me", response_model=UserResponse)
@@ -92,16 +127,29 @@ async def get_current_user_info(
 
 # ================== CLIENT ROUTES ==================
 
-@client_router.get("/", response_model=List[ClientResponse])
+@client_router.get("/")
 async def list_user_clients(
+    skip: int = 0,
+    limit: int = 100,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Lista todos os clientes do usuário atual
     """
+    # Get total count
+    from sqlalchemy import func
+    count_stmt = select(func.count(Client.id)).where(Client.owner_id == current_user.id)
+    count_result = await db.execute(count_stmt)
+    total = count_result.scalar()
+    
+    # Get clients with pagination
     result = await db.execute(
-        select(Client).where(Client.owner_id == current_user.id)
+        select(Client)
+        .where(Client.owner_id == current_user.id)
+        .offset(skip)
+        .limit(limit)
+        .order_by(Client.created_at.desc())
     )
     clients = result.scalars().all()
     
@@ -112,7 +160,12 @@ async def list_user_clients(
         client_data.has_evolution_token = bool(client.evolution_instance_token)
         client_responses.append(client_data)
     
-    return client_responses
+    return {
+        "clients": client_responses,
+        "total": total,
+        "skip": skip,
+        "limit": limit
+    }
 
 @client_router.post("/", response_model=ClientResponse)
 async def create_client(
@@ -142,6 +195,7 @@ async def create_client(
         evolution_result = await evolution_service.setup_client_instance(
             client_id="temp",  # Será atualizado após criar o client
             client_name=client_data.name,
+            whatsapp_number=client_data.whatsapp_number,
             evolution_url=client_data.evolution_api_url,
             evolution_key=client_data.evolution_api_key
         )
@@ -152,6 +206,9 @@ async def create_client(
             name=client_data.name,
             description=client_data.description,
             domain=client_data.domain,
+            
+            # WhatsApp
+            whatsapp_number=client_data.whatsapp_number,
             
             # Evolution API
             evolution_api_url=client_data.evolution_api_url,
@@ -188,10 +245,30 @@ async def create_client(
         await db.refresh(client)
         
         # Atualiza webhook URL com client_id real
-        if evolution_result["webhook_url"]:
+        if evolution_result.get("webhook_url"):
             webhook_url = evolution_result["webhook_url"].replace("/temp", f"/{client.id}")
             client.webhook_url = webhook_url
             await db.commit()
+            
+            # Também atualiza o webhook na Evolution API com a URL correta
+            try:
+                await evolution_service.update_webhook_url(
+                    instance_name=client.evolution_instance,
+                    webhook_url=webhook_url,
+                    evolution_url=client.evolution_api_url,
+                    evolution_key=client.evolution_api_key
+                )
+                print(f"✅ Webhook URL atualizada na Evolution API: {webhook_url}")
+            except Exception as webhook_error:
+                print(f"⚠️  Falha ao atualizar webhook na Evolution API: {webhook_error}")
+                print(f"📝 Cliente criado com sucesso, mas webhook deve ser reconfigurado manualmente")
+        
+        # Marca se webhook foi configurado com sucesso
+        webhook_configured = evolution_result.get("webhook_configured", False)
+        if webhook_configured:
+            print(f"✅ Webhook configurado com sucesso para cliente '{client.name}'")
+        else:
+            print(f"⚠️  Cliente '{client.name}' criado sem webhook - configurar manualmente se necessário")
         
         # Cria configuração padrão do agente
         default_config = AgentConfig(
@@ -290,16 +367,78 @@ async def get_client_qr_code(
         
         return {
             "client_id": client_id,
+            "client_name": client.name,
+            "whatsapp_number": client.whatsapp_number,
             "instance_name": client.evolution_instance,
             "qr_code": qr_data.get("base64"),
             "qr_code_url": qr_data.get("qrcode"),
-            "status": qr_data.get("status")
+            "status": qr_data.get("status"),
+            "connection_state": qr_data.get("instance", {}).get("state")
         }
         
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting QR code: {str(e)}"
+        )
+
+@client_router.post("/{client_id}/connect-pairing")
+async def connect_with_pairing_code(
+    client_id: str,
+    request: dict,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Conecta WhatsApp usando código de pareamento
+    """
+    pairing_code = request.get("pairing_code")
+    if not pairing_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pairing code is required"
+        )
+    
+    result = await db.execute(
+        select(Client).where(
+            Client.id == client_id,
+            Client.owner_id == current_user.id
+        )
+    )
+    client = result.scalar_one_or_none()
+    
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Client not found"
+        )
+    
+    if not client.evolution_instance:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Client does not have Evolution instance configured"
+        )
+    
+    try:
+        connection_result = await evolution_service.connect_with_pairing_code(
+            instance_name=client.evolution_instance,
+            pairing_code=pairing_code,
+            evolution_url=client.evolution_api_url,
+            evolution_key=client.evolution_api_key
+        )
+        
+        return {
+            "client_id": client_id,
+            "instance_name": client.evolution_instance,
+            "whatsapp_number": client.whatsapp_number,
+            "connection_result": connection_result,
+            "status": "connecting"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error connecting with pairing code: {str(e)}"
         )
 
 @client_router.get("/{client_id}/status")
@@ -340,14 +479,66 @@ async def get_client_whatsapp_status(
         
         return {
             "client_id": client_id,
+            "client_name": client.name,
+            "whatsapp_number": client.whatsapp_number,
             "instance_name": client.evolution_instance,
-            "status": status_data
+            "status": status_data,
+            "is_connected": status_data.get("state") == "open"
         }
         
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error checking status: {str(e)}"
+        )
+
+@client_router.post("/{client_id}/reset-sessions")
+async def reset_client_sessions(
+    client_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Reseta todas as sessões/mensagens de um cliente
+    """
+    result = await db.execute(
+        select(Client).where(
+            Client.id == client_id,
+            Client.owner_id == current_user.id
+        )
+    )
+    client = result.scalar_one_or_none()
+    
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Client not found"
+        )
+    
+    try:
+        # Deleta todas as mensagens do cliente
+        from src.core.db import Message
+        delete_query = select(Message).where(Message.client_id == client_id)
+        messages_result = await db.execute(delete_query)
+        messages = messages_result.scalars().all()
+        
+        for message in messages:
+            await db.delete(message)
+        
+        await db.commit()
+        
+        print(f"🗑️  Resetadas {len(messages)} mensagens do cliente {client.name}")
+        
+        return {
+            "status": "sessions_reset", 
+            "client_id": client_id,
+            "messages_deleted": len(messages)
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error resetting sessions: {str(e)}"
         )
 
 @client_router.delete("/{client_id}")

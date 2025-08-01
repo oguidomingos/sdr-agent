@@ -96,15 +96,16 @@ class MultiTenantComponents:
             # Processa a mensagem combinada with Gemini usando prompt personalizado
             print(f"🤖 [{self.client.name}] Enviando mensagem combinada para o Gemini...")
             
-            # Usa prompt personalizado do agente
-            system_prompt = self.agent_config.system_prompt or "Você é um assistente comercial especializado."
-            
+            # Processa com Gemini usando configurações do cliente
             response = await self.gemini_client.process_session(
                 session=session,
                 user_message=combined_content,
-                system_prompt=system_prompt,
-                temperature=self.agent_config.temperature / 100.0,  # Convert to 0-1 scale
-                max_tokens=self.agent_config.max_tokens
+                parameters={
+                    "temperature": self.agent_config.temperature / 100.0,  # Convert to 0-1 scale
+                    "max_tokens": self.agent_config.max_tokens,
+                    "system_prompt": self.agent_config.system_prompt or "Você é um assistente comercial especializado.",
+                    "welcome_prompt": self.agent_config.welcome_prompt or self.client.welcome_message or "Olá! Como posso ajudá-lo hoje?"
+                }
             )
             
             if not response:
@@ -188,6 +189,14 @@ async def get_client_components(client_id: str, db: AsyncSession) -> MultiTenant
     
     return components
 
+@router.post("/test/{client_id}")
+async def test_webhook(client_id: str, request: Request):
+    """Endpoint de teste para verificar se webhooks chegam"""
+    body = await request.body()
+    print(f"🧪 TEST WEBHOOK [{client_id}] RECEBIDO!")
+    print(f"📦 Body: {body.decode('utf-8')}")
+    return {"status": "test_received", "client_id": client_id}
+
 @router.post("/whatsapp/{client_id}")
 async def handle_client_webhook(
     client_id: str,
@@ -200,7 +209,11 @@ async def handle_client_webhook(
     Agora com sistema de batch processing e configurações isoladas
     """
     try:
-        print(f"🚀 [{client_id}] Iniciando processamento do webhook...")
+        print(f"🚀 [{client_id}] WEBHOOK RECEBIDO! Iniciando processamento...")
+        
+        # Log da requisição completa para debug
+        body = await request.body()
+        print(f"📦 [{client_id}] Raw body: {body.decode('utf-8')[:500]}...")
         
         # Obtém componentes isolados do cliente
         components = await get_client_components(client_id, db)
@@ -208,12 +221,29 @@ async def handle_client_webhook(
         # Extrai os dados do webhook
         webhook_data = await request.json()
         print(f"📦 [{client_id}] Dados recebidos: {webhook_data.get('type', 'unknown')}")
+        print(f"🔍 [{client_id}] Webhook data structure: {list(webhook_data.keys())}")
         
-        # Extrai dados da mensagem
-        sender_number = webhook_data["data"]["key"]["remoteJid"]
-        user_message = webhook_data["data"]["message"].get("conversation", "")
-        push_name = webhook_data["data"]["pushName"]
-        instance = webhook_data.get("instance", components.client.evolution_instance)
+        # Tratamento robusto para diferentes formatos de webhook
+        try:
+            # Formato padrão da Evolution API
+            if "data" in webhook_data and "key" in webhook_data["data"]:
+                sender_number = webhook_data["data"]["key"]["remoteJid"]
+                user_message = webhook_data["data"]["message"].get("conversation", "")
+                push_name = webhook_data["data"].get("pushName", "Unknown")
+            # Formato alternativo
+            elif "key" in webhook_data:
+                sender_number = webhook_data["key"]["remoteJid"]
+                user_message = webhook_data["message"].get("conversation", "")
+                push_name = webhook_data.get("pushName", "Unknown")
+            else:
+                print(f"❌ [{client_id}] Formato de webhook não reconhecido: {webhook_data}")
+                return {"status": "error", "message": "Webhook format not recognized"}
+            
+            instance = webhook_data.get("instance", components.client.evolution_instance)
+        except KeyError as e:
+            print(f"❌ [{client_id}] Erro ao extrair dados do webhook: {e}")
+            print(f"📋 [{client_id}] Webhook completo: {webhook_data}")
+            return {"status": "error", "message": f"Missing required field: {e}"}
         
         print(f"📱 [{client_id}] {push_name} ({sender_number}): {user_message}")
 
@@ -323,14 +353,15 @@ async def _process_single_message(
     session = await components.session_manager.get_session(sender_number, client_id)
     
     # Processa com Gemini usando configurações do cliente
-    system_prompt = components.agent_config.system_prompt or "Você é um assistente comercial especializado."
-    
     response = await components.gemini_client.process_session(
         session=session,
         user_message=user_message,
-        system_prompt=system_prompt,
-        temperature=components.agent_config.temperature / 100.0,
-        max_tokens=components.agent_config.max_tokens
+        parameters={
+            "temperature": components.agent_config.temperature / 100.0,
+            "max_tokens": components.agent_config.max_tokens,
+            "system_prompt": components.agent_config.system_prompt or "Você é um assistente comercial especializado.",
+            "welcome_prompt": components.agent_config.welcome_prompt or components.client.welcome_message or "Olá! Como posso ajudá-lo hoje?"
+        }
     )
     
     if not response:

@@ -63,6 +63,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: sdr_frontend
+    environment:
+      - VITE_API_URL=http://app:8000
     ports:
       - "3000:80"
     depends_on:

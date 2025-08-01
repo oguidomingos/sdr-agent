@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import Optional
+import httpx
 
 from src.core.db import get_db, Client, Playbook
 from src.types.schemas import (
@@ -48,6 +49,10 @@ async def get_client(client_id: str, db: AsyncSession = Depends(get_db)):
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     
+    # Check webhook status if not already set
+    if not hasattr(client, 'has_webhook_configured'):
+        client.has_webhook_configured = False
+        
     return ClientResponse.model_validate(client)
 
 @router.post("", response_model=ClientResponse)
@@ -55,7 +60,12 @@ async def create_client(
     client_data: ClientCreate,
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new client"""
+    """Create a new client
+    
+    Parameters:
+    - register_webhook: If True, automatically registers webhook for Evolution instance
+      after client creation (default: False)
+    """
     import uuid
     from src.core.db import ClientStatus, PlaybookStatus
     
@@ -132,6 +142,10 @@ async def create_client(
         db.add(default_playbook)
         await db.commit()
     
+    # Check webhook status if not already set
+    if not hasattr(client, 'has_webhook_configured'):
+        client.has_webhook_configured = False
+        
     return ClientResponse.model_validate(client)
 
 @router.put("/{client_id}", response_model=ClientResponse)
@@ -140,7 +154,12 @@ async def update_client(
     client_data: ClientUpdate,
     db: AsyncSession = Depends(get_db)
 ):
-    """Update an existing client"""
+    """Update an existing client
+    
+    Parameters:
+    - register_webhook: If True, automatically registers webhook for Evolution instance
+      after client update (optional)
+    """
     stmt = select(Client).where(Client.id == client_id)
     result = await db.execute(stmt)
     client = result.scalar_one_or_none()
@@ -156,7 +175,19 @@ async def update_client(
     
     await db.commit()
     await db.refresh(client)
-    
+
+    # Register webhook if requested
+    if client_data.register_webhook and client.evolution_instance:
+        try:
+            await configure_client_webhook(client.id, db)
+        except Exception as e:
+            # Log error but don't fail the operation
+            print(f"Error registering webhook: {str(e)}")
+
+    # Check webhook status if not already set
+    if not hasattr(client, 'has_webhook_configured'):
+        client.has_webhook_configured = False
+        
     return ClientResponse.model_validate(client)
 
 @router.delete("/{client_id}")
@@ -173,3 +204,64 @@ async def delete_client(client_id: str, db: AsyncSession = Depends(get_db)):
     await db.commit()
     
     return {"message": "Client deleted successfully"}
+
+@router.post("/{client_id}/webhook")
+async def configure_client_webhook(
+    client_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Configure webhook for a client's Evolution instance"""
+    from src.core.evolution_integration import evolution_service
+    from src.config.settings import settings
+    
+    # Get client from database
+    stmt = select(Client).where(Client.id == client_id)
+    result = await db.execute(stmt)
+    client = result.scalar_one_or_none()
+    
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    if not client.evolution_instance:
+        raise HTTPException(
+            status_code=400,
+            detail="Client does not have an Evolution instance configured"
+        )
+    
+    try:
+        # Get Evolution client
+        evolution_client = evolution_service.get_client(
+            client.evolution_api_url,
+            client.evolution_api_key
+        )
+        
+        # Configure webhook
+        webhook_url = f"{settings.WEBHOOK_BASE_URL}/webhook/whatsapp/{client_id}"
+        result = await evolution_client.configure_webhook(
+            instance_name=client.evolution_instance,
+            webhook_url=webhook_url,
+            events=["MESSAGE_UPSERT", "CONNECTION_UPDATE"]
+        )
+        
+        # Update client webhook status
+        client.has_webhook_configured = True
+        await db.commit()
+        await db.refresh(client)
+        
+        return {
+            "status": "success",
+            "webhook_url": webhook_url,
+            "instance": client.evolution_instance,
+            "result": result
+        }
+        
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Error configuring webhook with Evolution API: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )

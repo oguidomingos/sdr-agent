@@ -1,4 +1,4 @@
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, Navigate } from 'react-router-dom';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from './AppSidebar';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -15,7 +15,6 @@ import { Badge } from '@/components/ui/badge';
 import { ClientSelector } from '@/components/ui/ClientSelector';
 import { Bell, LogOut, Settings, User } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { AuthPage } from '@/components/auth';
 
 export function AppLayout() {
   const location = useLocation();
@@ -30,9 +29,9 @@ export function AppLayout() {
     );
   }
 
-  // Show auth page if not authenticated
+  // Redirect to login if not authenticated
   if (!isAuthenticated) {
-    return <AuthPage />;
+    return <Navigate to="/login" replace />;
   }
 
   // Get user initials for avatar
@@ -40,9 +39,9 @@ export function AppLayout() {
   const userName = user ? `${user.first_name} ${user.last_name || ''}`.trim() : 'User';
 
   // Páginas que precisam de cliente selecionado
-  const clientRequiredPages = ['/conversations', '/playbooks', '/reports'];
+  const clientRequiredPages = ['/app/playbooks', '/app/reports'];
   const needsClientSelector = clientRequiredPages.some(page => 
-    location.pathname === page || (page !== '/' && location.pathname.startsWith(page))
+    location.pathname === page || (page !== '/app' && location.pathname.startsWith(page))
   );
 
   return (

@@ -59,15 +59,24 @@ class EvolutionAPIClient:
             
             print(f"✅ Instância '{instance_name}' criada com sucesso")
             
-            # Configurar webhook se fornecido
+            # Configurar webhook se fornecido (não falha se webhook der erro)
+            webhook_configured = False
             if webhook_url:
-                webhook_result = await self.configure_webhook(
-                    instance_name, 
-                    webhook_url, 
-                    webhook_events or ["MESSAGE_UPSERT"]
-                )
-                instance_result["webhook"] = webhook_result
+                try:
+                    webhook_result = await self.configure_webhook(
+                        instance_name, 
+                        webhook_url, 
+                        webhook_events or ["MESSAGES_UPSERT", "CONNECTION_UPDATE"]
+                    )
+                    instance_result["webhook"] = webhook_result
+                    webhook_configured = True
+                    print(f"✅ Webhook configurado com sucesso para '{instance_name}'")
+                except Exception as webhook_error:
+                    print(f"⚠️  Falha ao configurar webhook para '{instance_name}': {webhook_error}")
+                    print(f"📝 Instância criada com sucesso, mas webhook deve ser configurado manualmente")
+                    instance_result["webhook"] = {"error": str(webhook_error), "configured": False}
             
+            instance_result["webhook_configured"] = webhook_configured
             return instance_result
             
         except httpx.HTTPError as e:
@@ -84,7 +93,7 @@ class EvolutionAPIClient:
         events: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
-        Configura webhook para uma instância
+        Configura webhook para uma instância usando Evolution API v2
         
         Args:
             instance_name: Nome da instância
@@ -95,12 +104,29 @@ class EvolutionAPIClient:
             dict: Resposta da configuração do webhook
         """
         try:
+            # Payload correto para Evolution API
             webhook_data = {
+                "enabled": True,
                 "url": webhook_url,
-                "webhook_by_events": True,
-                "events": events or ["MESSAGE_UPSERT"]
+                "webhook_by_events": False,  # Usar um webhook para todos os eventos
+                "events": events or [
+                    "MESSAGES_UPSERT", 
+                    "CONNECTION_UPDATE",
+                    "QRCODE_UPDATED"
+                ],
+                "webhook": {
+                    "enabled": True,
+                    "url": webhook_url,
+                    "by_events": False,
+                    "events": events or [
+                        "MESSAGES_UPSERT", 
+                        "CONNECTION_UPDATE",
+                        "QRCODE_UPDATED"
+                    ]
+                }
             }
             
+            # Endpoint correto: /webhook/set/{instance_name}
             response = await self.client.post(
                 f"/webhook/set/{instance_name}",
                 json=webhook_data
@@ -108,12 +134,18 @@ class EvolutionAPIClient:
             response.raise_for_status()
             
             result = response.json()
-            print(f"✅ Webhook configurado para instância '{instance_name}'")
+            print(f"✅ Webhook configurado para instância '{instance_name}' na URL: {webhook_url}")
             
             return result
             
         except httpx.HTTPError as e:
             print(f"❌ Erro HTTP ao configurar webhook: {e}")
+            # Log mais detalhes para debug
+            try:
+                error_detail = await e.response.aread() if hasattr(e, 'response') else str(e)
+                print(f"❌ Detalhes do erro: {error_detail}")
+            except:
+                pass
             raise Exception(f"Erro ao configurar webhook: {e}")
         except Exception as e:
             print(f"❌ Erro ao configurar webhook: {e}")
@@ -189,6 +221,37 @@ class EvolutionAPIClient:
             print(f"❌ Erro ao listar instâncias: {e}")
             return []
     
+    async def connect_with_pairing_code(
+        self, 
+        instance_name: str, 
+        pairing_code: str
+    ) -> Dict[str, Any]:
+        """
+        Conecta instância usando código de pareamento
+        
+        Args:
+            instance_name: Nome da instância
+            pairing_code: Código de pareamento do WhatsApp
+            
+        Returns:
+            dict: Resposta da conexão
+        """
+        try:
+            pairing_data = {
+                "number": pairing_code
+            }
+            
+            response = await self.client.post(
+                f"/instance/connect/{instance_name}",
+                json=pairing_data
+            )
+            response.raise_for_status()
+            return response.json()
+            
+        except httpx.HTTPError as e:
+            print(f"❌ Erro ao conectar com código de pareamento: {e}")
+            raise Exception(f"Erro ao conectar com código de pareamento: {e}")
+
     async def send_message(
         self, 
         instance_name: str, 
@@ -255,6 +318,7 @@ class EvolutionIntegrationService:
         self,
         client_id: str,
         client_name: str,
+        whatsapp_number: str,
         evolution_url: str,
         evolution_key: str,
         webhook_base_url: Optional[str] = None
@@ -265,6 +329,7 @@ class EvolutionIntegrationService:
         Args:
             client_id: ID do cliente
             client_name: Nome do cliente
+            whatsapp_number: Número do WhatsApp que será conectado
             evolution_url: URL da Evolution API
             evolution_key: Chave da API
             webhook_base_url: URL base para webhooks
@@ -272,8 +337,22 @@ class EvolutionIntegrationService:
         Returns:
             dict: Dados da instância criada
         """
-        # Gera nome único da instância
-        instance_name = f"client_{client_id}_{client_name.lower().replace(' ', '_')}"
+        # Gera nome único da instância baseado no número do WhatsApp
+        # Remove caracteres especiais do número (mantém apenas dígitos)
+        import re
+        clean_number = re.sub(r'[^0-9]', '', whatsapp_number)
+        
+        # Sanitiza o nome do cliente
+        sanitized_name = client_name.lower().replace(' ', '_').replace('-', '_')
+        sanitized_name = re.sub(r'[^a-z0-9_]', '', sanitized_name)
+        
+        # Se client_id é "temp", gera um UUID temporário
+        if client_id == "temp":
+            import uuid
+            temp_id = str(uuid.uuid4())[:8]  # Primeiros 8 caracteres do UUID
+            instance_name = f"whatsapp_{clean_number}_{temp_id}_{sanitized_name}"
+        else:
+            instance_name = f"whatsapp_{clean_number}_{client_id}_{sanitized_name}"
         
         # URL do webhook específica para este cliente
         if not webhook_base_url:
@@ -289,7 +368,7 @@ class EvolutionIntegrationService:
             result = await evolution_client.create_instance(
                 instance_name=instance_name,
                 webhook_url=webhook_url,
-                webhook_events=["MESSAGE_UPSERT", "CONNECTION_UPDATE"]
+                webhook_events=["MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"]
             )
             
             # Gera secret para webhook
@@ -357,6 +436,62 @@ class EvolutionIntegrationService:
         finally:
             await evolution_client.close()
     
+    async def connect_with_pairing_code(
+        self,
+        instance_name: str,
+        pairing_code: str,
+        evolution_url: str,
+        evolution_key: str
+    ) -> Dict[str, Any]:
+        """
+        Conecta instância usando código de pareamento
+        
+        Args:
+            instance_name: Nome da instância
+            pairing_code: Código de pareamento
+            evolution_url: URL da Evolution API
+            evolution_key: Chave da API
+            
+        Returns:
+            dict: Resposta da conexão
+        """
+        evolution_client = self.get_client(evolution_url, evolution_key)
+        
+        try:
+            return await evolution_client.connect_with_pairing_code(instance_name, pairing_code)
+        finally:
+            await evolution_client.close()
+
+    async def update_webhook_url(
+        self,
+        instance_name: str,
+        webhook_url: str,
+        evolution_url: str,
+        evolution_key: str
+    ) -> Dict[str, Any]:
+        """
+        Atualiza URL do webhook de uma instância
+        
+        Args:
+            instance_name: Nome da instância
+            webhook_url: Nova URL do webhook
+            evolution_url: URL da Evolution API
+            evolution_key: Chave da API
+            
+        Returns:
+            dict: Resposta da atualização
+        """
+        evolution_client = self.get_client(evolution_url, evolution_key)
+        
+        try:
+            return await evolution_client.configure_webhook(
+                instance_name=instance_name,
+                webhook_url=webhook_url,
+                events=["MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"]
+            )
+        finally:
+            await evolution_client.close()
+
     async def check_instance_status(
         self,
         instance_name: str,

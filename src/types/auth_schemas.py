@@ -62,6 +62,9 @@ class ClientCreateRequest(BaseModel):
     description: Optional[str] = None
     domain: str = Field(..., min_length=1, max_length=255)
     
+    # WhatsApp number (required for Evolution API instance)
+    whatsapp_number: str = Field(..., min_length=10, max_length=20, description="Número do WhatsApp que será conectado (formato: +5511999999999)")
+    
     # Evolution API credentials
     evolution_api_url: str = Field(..., min_length=1)
     evolution_api_key: str = Field(..., min_length=1)
@@ -93,6 +96,9 @@ class ClientResponse(BaseModel):
     description: Optional[str]
     domain: str
     status: str
+    
+    # WhatsApp info
+    whatsapp_number: Optional[str]
     
     # Evolution API info (sem expor tokens)
     evolution_api_url: Optional[str]
