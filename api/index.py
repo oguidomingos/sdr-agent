@@ -5,6 +5,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
 
+# Import CORS configuration
+from src.core.cors_config import get_cors_config
+
 # Import routers
 from api.auth.router import router as auth_router
 from api.clients.router import router as clients_router
@@ -18,17 +21,15 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Configure CORS
+# Configure CORS with proper settings
+cors_config = get_cors_config()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://sdr-agent-frontend.vercel.app",
-        "http://localhost:3000",
-        "http://localhost:5173"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_config["allow_origins"],
+    allow_credentials=cors_config["allow_credentials"],
+    allow_methods=cors_config["allow_methods"],
+    allow_headers=cors_config["allow_headers"],
+    max_age=cors_config["max_age"]
 )
 
 # Include routers

@@ -20,10 +20,15 @@ import {
 
 // Create axios instance with base configuration
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
+  baseURL: import.meta.env.VITE_API_URL || (
+    import.meta.env.PROD 
+      ? 'https://your-app.vercel.app/api'  // Replace with your actual Vercel domain
+      : 'http://localhost:3000/api'
+  ),
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000, // 30 seconds timeout for serverless functions
 });
 
 // Add request interceptor for authentication if needed
