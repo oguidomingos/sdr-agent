@@ -33,6 +33,7 @@ import {
   User,
   ChevronUp,
 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 const navigationItems = [
   {
@@ -84,6 +85,7 @@ const navigationItems = [
 
 export function AppSidebar() {
   const location = useLocation();
+  const { user, logout } = useAuth();
 
   const isActive = (url: string) => {
     if (url === '/app') {
@@ -91,6 +93,11 @@ export function AppSidebar() {
     }
     return location.pathname.startsWith(url);
   };
+
+  // Get user initials for avatar
+  const userInitials = user ? `${user.first_name?.[0] || ''}${user.last_name?.[0] || ''}`.toUpperCase() : 'U';
+  const userName = user ? `${user.first_name} ${user.last_name || ''}`.trim() : 'User';
+  const userEmail = user?.email || 'user@example.com';
 
   return (
     <Sidebar>
@@ -138,13 +145,13 @@ export function AppSidebar() {
                   className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
                 >
                   <Avatar className="h-8 w-8 rounded-lg">
-                    <AvatarImage src="/placeholder-avatar.png" alt="Admin" />
-                    <AvatarFallback className="rounded-lg">AD</AvatarFallback>
+                    <AvatarImage src="/placeholder-avatar.png" alt={userName} />
+                    <AvatarFallback className="rounded-lg">{userInitials}</AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-semibold">Admin</span>
+                    <span className="truncate font-semibold">{userName}</span>
                     <span className="truncate text-xs text-muted-foreground">
-                      admin@sdr-agent.com
+                      {userEmail}
                     </span>
                   </div>
                   <ChevronUp className="ml-auto size-4" />
@@ -159,13 +166,13 @@ export function AppSidebar() {
                 <DropdownMenuLabel className="p-0 font-normal">
                   <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                     <Avatar className="h-8 w-8 rounded-lg">
-                      <AvatarImage src="/placeholder-avatar.png" alt="Admin" />
-                      <AvatarFallback className="rounded-lg">AD</AvatarFallback>
+                      <AvatarImage src="/placeholder-avatar.png" alt={userName} />
+                      <AvatarFallback className="rounded-lg">{userInitials}</AvatarFallback>
                     </Avatar>
                     <div className="grid flex-1 text-left text-sm leading-tight">
-                      <span className="truncate font-semibold">Admin</span>
+                      <span className="truncate font-semibold">{userName}</span>
                       <span className="truncate text-xs text-muted-foreground">
-                        admin@sdr-agent.com
+                        {userEmail}
                       </span>
                     </div>
                   </div>
@@ -180,7 +187,7 @@ export function AppSidebar() {
                   <span>Configurações</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={logout}>
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Sair</span>
                 </DropdownMenuItem>

@@ -1,0 +1,16 @@
+{
+  "SUPABASE_URL": "https://roezccmxctqbvdjlgdru.supabase.co",
+  "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJvZXpjY214Y3RxYnZkamxnZHJ1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NDA3ODUzNSwiZXhwIjoyMDY5NjU0NTM1fQ.sE5v5FCfMKhsnehtnCF75S1N41g7f3JaZS1v1sDCeU0",
+  "JWT_SECRET": "dev-jwt-secret-change-in-production",
+  "JWT_EXPIRATION_HOURS": "24",
+  "CORS_ORIGINS": "https://sdr-agent-fixed.vercel.app,http://localhost:3000",
+  "GEMINI_API_KEY": "AIzaSyASsQw-arw3Mqp7q01qy37Wxkrj-Lo0oHk",
+  "GEMINI_MODEL": "gemini-2.0-flash",
+  "EVOLUTION_API_URL": "http://host.docker.internal:8888",
+  "EVOLUTION_API_KEY": "B6D711FCDE4D4FD5936544120E713976",
+  "ENVIRONMENT": "production",
+  "DEBUG": "false",
+  "RATE_LIMIT_ENABLED": "true",
+  "RATE_LIMIT_CALLS": "100",
+  "RATE_LIMIT_PERIOD": "3600"
+}

@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "user-prompt-submit-hook": "afplay /System/Library/Sounds/Glass.aiff"
+  }
+}

@@ -19,10 +19,29 @@ class SupabaseDB:
         self.url = os.environ.get("SUPABASE_URL")
         self.service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
         
-        if not all([self.url, self.service_key]):
-            raise ValueError("Missing required Supabase environment variables")
+        if not self.url:
+            raise ValueError("SUPABASE_URL environment variable is required")
+        if not self.service_key:
+            raise ValueError("SUPABASE_SERVICE_ROLE_KEY environment variable is required")
         
-        self.client: Client = create_client(self.url, self.service_key)
+        try:
+            self.client: Client = create_client(self.url, self.service_key)
+            # Test connection immediately
+            self._validate_connection()
+        except Exception as e:
+            raise ValueError(f"Failed to connect to Supabase: {str(e)}")
+    
+    def _validate_connection(self):
+        """Validate Supabase connection on initialization"""
+        try:
+            # Test connection with a simple query
+            result = self.client.table('users').select('id').limit(1).execute()
+            if not hasattr(result, 'data'):
+                raise Exception("Invalid Supabase response format")
+            logger.info("✅ Supabase connection validated successfully")
+        except Exception as e:
+            logger.error(f"❌ Supabase connection validation failed: {e}")
+            raise Exception(f"Supabase connection test failed: {str(e)}")
     
     # User operations
     async def create_user(self, user_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:

@@ -4,19 +4,30 @@
       "command": "uvx",
       "args": ["mcp-server-vercel@latest"],
       "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR"
+        "FASTMCP_LOG_LEVEL": "ERROR",
+        "VERCEL_TOKEN": "${VERCEL_TOKEN}"
       },
       "disabled": false,
-      "autoApprove": []
+      "autoApprove": [
+        "vercel_get_projects",
+        "vercel_get_deployments",
+        "vercel_get_env_vars"
+      ]
     },
     "supabase": {
       "command": "uvx", 
       "args": ["mcp-server-supabase@latest"],
       "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR"
+        "FASTMCP_LOG_LEVEL": "ERROR",
+        "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}",
+        "SUPABASE_PROJECT_REF": "${SUPABASE_PROJECT_REF}"
       },
       "disabled": false,
-      "autoApprove": []
+      "autoApprove": [
+        "supabase_get_projects",
+        "supabase_execute_sql",
+        "supabase_get_tables"
+      ]
     }
   }
 }

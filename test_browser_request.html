@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test API Request</title>
+</head>
+<body>
+    <h1>Test API Request</h1>
+    <button onclick="testRegister()">Test Register</button>
+    <div id="result"></div>
+
+    <script>
+        async function testRegister() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing...';
+            
+            try {
+                console.log('Making request to:', '/api/auth/register');
+                
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'test@example.com',
+                        password: '123456',
+                        first_name: 'Test',
+                        last_name: 'User'
+                    })
+                });
+                
+                console.log('Response status:', response.status);
+                console.log('Response headers:', [...response.headers.entries()]);
+                
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <h3>Success!</h3>
+                    <p>Status: ${response.status}</p>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+                
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = `
+                    <h3>Error!</h3>
+                    <p>${error.message}</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

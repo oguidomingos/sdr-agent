@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Browser Issue</title>
+</head>
+<body>
+    <h1>Debug Browser Issue</h1>
+    <button onclick="testWithFetch()">Test with Fetch</button>
+    <button onclick="testWithXHR()">Test with XMLHttpRequest</button>
+    <div id="result"></div>
+
+    <script>
+        async function testWithFetch() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing with fetch...';
+            
+            try {
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'fetch@test.com',
+                        password: '123456',
+                        first_name: 'Fetch',
+                        last_name: 'Test'
+                    })
+                });
+                
+                console.log('Fetch - Status:', response.status);
+                console.log('Fetch - Headers:', [...response.headers.entries()]);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `
+                        <h3>Fetch Success!</h3>
+                        <p>Status: ${response.status}</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <h3>Fetch Error!</h3>
+                        <p>Status: ${response.status}</p>
+                        <p>Status Text: ${response.statusText}</p>
+                    `;
+                }
+                
+            } catch (error) {
+                console.error('Fetch Error:', error);
+                resultDiv.innerHTML = `
+                    <h3>Fetch Exception!</h3>
+                    <p>${error.message}</p>
+                `;
+            }
+        }
+        
+        function testWithXHR() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing with XMLHttpRequest...';
+            
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/auth/register', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    console.log('XHR - Status:', xhr.status);
+                    console.log('XHR - Response:', xhr.responseText);
+                    console.log('XHR - Headers:', xhr.getAllResponseHeaders());
+                    
+                    if (xhr.status === 200 || xhr.status === 201) {
+                        const data = JSON.parse(xhr.responseText);
+                        resultDiv.innerHTML = `
+                            <h3>XHR Success!</h3>
+                            <p>Status: ${xhr.status}</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        `;
+                    } else {
+                        resultDiv.innerHTML = `
+                            <h3>XHR Error!</h3>
+                            <p>Status: ${xhr.status}</p>
+                            <p>Response: ${xhr.responseText}</p>
+                        `;
+                    }
+                }
+            };
+            
+            xhr.onerror = function() {
+                console.error('XHR Error');
+                resultDiv.innerHTML = `
+                    <h3>XHR Network Error!</h3>
+                `;
+            };
+            
+            xhr.send(JSON.stringify({
+                email: 'xhr@test.com',
+                password: '123456',
+                first_name: 'XHR',
+                last_name: 'Test'
+            }));
+        }
+    </script>
+</body>
+</html>
