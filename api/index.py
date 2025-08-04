@@ -8,7 +8,9 @@ import time
 import os
 import uuid
 import requests
+import google.generativeai as genai
 from datetime import datetime
+from typing import Optional, Dict, Any
 
 # Supabase integration
 _supabase_client = None
@@ -138,6 +140,125 @@ def create_evolution_instance(client_name, client_id):
     except Exception as e:
         print(f"❌ Evolution API exception: {e}")
         return None
+
+def get_client_by_instance(instance_name: str) -> Optional[Dict[str, Any]]:
+    """Get client configuration by Evolution instance name"""
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            return None
+            
+        result = (supabase.table('clients')
+                 .select('*')
+                 .eq('evolution_instance', instance_name)
+                 .execute())
+        
+        if result.data:
+            return result.data[0]
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error getting client by instance: {e}")
+        return None
+
+def send_whatsapp_message(message: str, phone_number: str, instance_name: str, evolution_api_key: str) -> bool:
+    """Send message via Evolution API"""
+    try:
+        evolution_url = "https://evolutionapi.centralsupernova.com.br"
+        url = f"{evolution_url}/message/sendText/{instance_name}"
+        
+        payload = {
+            "number": phone_number,
+            "text": message
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": evolution_api_key
+        }
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        
+        if response.status_code == 201:
+            print(f"✅ Message sent to {phone_number}")
+            return True
+        else:
+            print(f"❌ Failed to send message: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error sending WhatsApp message: {e}")
+        return False
+
+def process_message_with_ai(message_text: str, user_phone: str, client_config: Dict[str, Any]) -> Optional[str]:
+    """Process message with Gemini AI using client configuration"""
+    try:
+        gemini_api_key = client_config.get('gemini_api_key')
+        gemini_model = client_config.get('gemini_model', 'gemini-2.0-flash-exp')
+        agent_persona = client_config.get('agent_persona', '')
+        
+        if not gemini_api_key:
+            print("⚠️ No Gemini API key configured for client")
+            return None
+            
+        # Configure Gemini
+        genai.configure(api_key=gemini_api_key)
+        model = genai.GenerativeModel(gemini_model)
+        
+        # Build context prompt
+        system_prompt = f"""
+Você é um assistente de vendas inteligente. 
+
+PERSONA DO AGENTE:
+{agent_persona}
+
+INSTRUÇÕES:
+- Use a persona fornecida para responder
+- Seja natural e conversacional
+- Faça perguntas para qualificar o lead
+- Mantenha respostas concisas (máximo 200 caracteres)
+- Use o método SPIN Selling quando apropriado
+
+MENSAGEM DO USUÁRIO: {message_text}
+
+Responda de forma profissional e útil:
+"""
+        
+        # Generate response
+        response = model.generate_content(system_prompt)
+        
+        if response and response.text:
+            return response.text.strip()
+        else:
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error processing message with AI: {e}")
+        return None
+
+def save_message_to_database(client_id: str, user_phone: str, message_text: str, direction: str) -> bool:
+    """Save message to Supabase"""
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            return False
+            
+        message_data = {
+            "client_id": client_id,
+            "user_id": user_phone,
+            "message_direction": direction,
+            "content": message_text,
+            "timestamp": datetime.utcnow().isoformat(),
+            "status": "delivered",
+            "lead_score": 0
+        }
+        
+        result = supabase.table('messages').insert(message_data).execute()
+        return bool(result.data)
+        
+    except Exception as e:
+        print(f"❌ Error saving message: {e}")
+        return False
 
 class handler(BaseHTTPRequestHandler):
     def _send_cors_headers(self, status_code=200):
@@ -526,23 +647,116 @@ class handler(BaseHTTPRequestHandler):
                     "debug_info": {"supabase_error": str(e)}
                 }, 500)
         elif path == 'webhook/whatsapp':
-            # Webhook endpoint for Evolution API
+            # Webhook endpoint for Evolution API with AI processing
             try:
                 print(f"📨 Received webhook from Evolution API")
                 print(f"📨 Webhook data: {body}")
                 
                 # Process different webhook events
                 event_type = body.get('event', '')
-                instance = body.get('instance', {})
+                instance_data = body.get('instance', {})
                 data = body.get('data', {})
                 
                 if event_type == 'MESSAGES_UPSERT':
-                    # Handle incoming message
+                    # Handle incoming message with AI processing
                     message = data.get('message', {})
-                    from_user = message.get('key', {}).get('remoteJid', '')
-                    message_text = message.get('message', {}).get('conversation', '')
+                    message_key = message.get('key', {})
+                    from_user = message_key.get('remoteJid', '')
+                    from_me = message_key.get('fromMe', False)
+                    
+                    # Skip messages sent by us
+                    if from_me:
+                        print(f"📤 Ignoring outbound message")
+                        self._send_json_response({
+                            "status": "success",
+                            "received": True,
+                            "action": "ignored_outbound"
+                        })
+                        return
+                    
+                    # Extract message text
+                    message_content = message.get('message', {})
+                    message_text = (
+                        message_content.get('conversation') or 
+                        message_content.get('extendedTextMessage', {}).get('text') or
+                        ''
+                    )
+                    
+                    if not message_text:
+                        print(f"⚠️ No text content found in message")
+                        self._send_json_response({
+                            "status": "success",
+                            "received": True,
+                            "action": "no_text_content"
+                        })
+                        return
                     
                     print(f"📩 New message from {from_user}: {message_text}")
+                    
+                    # Get instance name from webhook data
+                    instance_name = instance_data.get('instanceName', '')
+                    if not instance_name:
+                        print(f"⚠️ No instance name in webhook data")
+                        self._send_json_response({
+                            "status": "success", 
+                            "received": True,
+                            "action": "no_instance_name"
+                        })
+                        return
+                    
+                    # Get client configuration by instance
+                    client_config = get_client_by_instance(instance_name)
+                    if not client_config:
+                        print(f"⚠️ No client found for instance: {instance_name}")
+                        self._send_json_response({
+                            "status": "success",
+                            "received": True,
+                            "action": "client_not_found"
+                        })
+                        return
+                    
+                    print(f"🔍 Found client: {client_config.get('name', 'Unknown')}")
+                    
+                    # Save incoming message to database
+                    save_message_to_database(
+                        client_config['id'],
+                        from_user,
+                        message_text,
+                        'inbound'
+                    )
+                    
+                    # Process message with AI
+                    ai_response = process_message_with_ai(
+                        message_text,
+                        from_user,
+                        client_config
+                    )
+                    
+                    if ai_response:
+                        print(f"🤖 AI generated response: {ai_response}")
+                        
+                        # Send AI response via WhatsApp
+                        success = send_whatsapp_message(
+                            ai_response,
+                            from_user,
+                            instance_name,
+                            client_config.get('evolution_api_key', '')
+                        )
+                        
+                        if success:
+                            # Save outgoing message to database
+                            save_message_to_database(
+                                client_config['id'],
+                                from_user,
+                                ai_response,
+                                'outbound'
+                            )
+                            
+                            print(f"✅ AI response sent and saved")
+                        else:
+                            print(f"❌ Failed to send AI response")
+                    else:
+                        print(f"⚠️ No AI response generated")
                     
                 elif event_type == 'CONNECTION_UPDATE':
                     # Handle connection status updates
@@ -551,14 +765,15 @@ class handler(BaseHTTPRequestHandler):
                     
                 elif event_type == 'SEND_MESSAGE':
                     # Handle sent message events
-                    print(f"📤 Message sent")
+                    print(f"📤 Message sent event")
                 
                 # Always return success to Evolution API
                 self._send_json_response({
                     "status": "success",
                     "received": True,
                     "event": event_type,
-                    "timestamp": "2025-08-04T21:35:00Z"
+                    "processed": True,
+                    "timestamp": datetime.utcnow().isoformat()
                 })
                 
             except Exception as e:
@@ -567,7 +782,8 @@ class handler(BaseHTTPRequestHandler):
                 self._send_json_response({
                     "status": "error",
                     "error": str(e),
-                    "received": True
+                    "received": True,
+                    "timestamp": datetime.utcnow().isoformat()
                 })
         else:
             self._send_json_response({
