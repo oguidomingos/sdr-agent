@@ -49,8 +49,46 @@ def get_supabase_client():
     
     return _supabase_client
 
+def configure_evolution_webhook(instance_name, evolution_url, evolution_api_key):
+    """Configure webhook for Evolution API instance"""
+    try:
+        webhook_url = f"{evolution_url}/webhook/set/{instance_name}"
+        
+        webhook_payload = {
+            "webhook": {
+                "url": "https://sdr-agent-five.vercel.app/api/webhook/whatsapp",
+                "enabled": True,
+                "webhookByEvents": True,
+                "webhookBase64": False,
+                "events": [
+                    "MESSAGES_UPSERT",
+                    "SEND_MESSAGE", 
+                    "CONNECTION_UPDATE"
+                ]
+            }
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": evolution_api_key
+        }
+        
+        print(f"🔗 Configuring webhook for instance: {instance_name}")
+        response = requests.post(webhook_url, json=webhook_payload, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            print(f"✅ Webhook configured for instance: {instance_name}")
+            return True
+        else:
+            print(f"⚠️ Webhook configuration failed: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Webhook configuration exception: {e}")
+        return False
+
 def create_evolution_instance(client_name, client_id):
-    """Create an instance in Evolution API"""
+    """Create an instance in Evolution API and configure webhook"""
     try:
         evolution_url = "https://evolutionapi.centralsupernova.com.br"
         evolution_api_key = os.environ.get("EVOLUTION_API_KEY", "")
@@ -63,7 +101,7 @@ def create_evolution_instance(client_name, client_id):
         # Generate instance name based on client (shorter name)
         instance_name = f"sdr_{client_id[:8]}"
         
-        # API endpoint for creating instance
+        # Step 1: Create instance
         url = f"{evolution_url}/instance/create"
         
         payload = {
@@ -84,9 +122,14 @@ def create_evolution_instance(client_name, client_id):
         if response.status_code == 201:
             data = response.json()
             print(f"✅ Evolution instance created: {instance_name}")
+            
+            # Step 2: Configure webhook automatically
+            webhook_configured = configure_evolution_webhook(instance_name, evolution_url, evolution_api_key)
+            
             return {
                 "instance_name": instance_name,
-                "instance_data": data
+                "instance_data": data,
+                "webhook_configured": webhook_configured
             }
         else:
             print(f"❌ Evolution API error: {response.status_code} - {response.text}")
@@ -482,12 +525,56 @@ class handler(BaseHTTPRequestHandler):
                     "error": f"Database error: {str(e)}",
                     "debug_info": {"supabase_error": str(e)}
                 }, 500)
+        elif path == 'webhook/whatsapp':
+            # Webhook endpoint for Evolution API
+            try:
+                print(f"📨 Received webhook from Evolution API")
+                print(f"📨 Webhook data: {body}")
+                
+                # Process different webhook events
+                event_type = body.get('event', '')
+                instance = body.get('instance', {})
+                data = body.get('data', {})
+                
+                if event_type == 'MESSAGES_UPSERT':
+                    # Handle incoming message
+                    message = data.get('message', {})
+                    from_user = message.get('key', {}).get('remoteJid', '')
+                    message_text = message.get('message', {}).get('conversation', '')
+                    
+                    print(f"📩 New message from {from_user}: {message_text}")
+                    
+                elif event_type == 'CONNECTION_UPDATE':
+                    # Handle connection status updates
+                    state = data.get('state', '')
+                    print(f"🔗 Connection update: {state}")
+                    
+                elif event_type == 'SEND_MESSAGE':
+                    # Handle sent message events
+                    print(f"📤 Message sent")
+                
+                # Always return success to Evolution API
+                self._send_json_response({
+                    "status": "success",
+                    "received": True,
+                    "event": event_type,
+                    "timestamp": "2025-08-04T21:35:00Z"
+                })
+                
+            except Exception as e:
+                print(f"❌ Webhook processing error: {e}")
+                # Still return success to avoid Evolution API retries
+                self._send_json_response({
+                    "status": "error",
+                    "error": str(e),
+                    "received": True
+                })
         else:
             self._send_json_response({
                 "error": "Endpoint not found",
                 "path": self.path,
                 "method": "POST",
-                "available_endpoints": ["auth/register", "auth/login"]
+                "available_endpoints": ["auth/register", "auth/login", "clients/", "webhook/whatsapp"]
             }, 404)
     
     def do_OPTIONS(self):
