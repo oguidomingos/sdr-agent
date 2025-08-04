@@ -4,15 +4,14 @@
   "devCommand": "cd frontend && npm run dev -- --port $PORT",
   "installCommand": "cd frontend && npm install",
   "functions": {
-    "api/**/*.py": {
-      "runtime": "python3.9",
-      "maxDuration": 30
+    "api/index.py": {
+      "runtime": "python3.12"
     }
   },
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/$1"
+      "destination": "/api/index"
     },
     {
       "source": "/(.*)",
@@ -20,16 +19,6 @@
     }
   ],
   "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Credentials", "value": "true" },
-        { "key": "Access-Control-Allow-Origin", "value": "https://sdr-agent-frontend.vercel.app" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
-        { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, X-Signature, X-Hub-Signature-256" },
-        { "key": "Access-Control-Max-Age", "value": "86400" }
-      ]
-    },
     {
       "source": "/(.*)",
       "headers": [
@@ -39,8 +28,5 @@
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
       ]
     }
-  ],
-  "env": {
-    "PYTHONPATH": "."
-  }
+  ]
 }
