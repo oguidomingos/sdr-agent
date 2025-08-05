@@ -58,7 +58,7 @@ def configure_evolution_webhook(instance_name, evolution_url, evolution_api_key)
         
         webhook_payload = {
             "webhook": {
-                "url": "https://sdr-agent-five.vercel.app/api/webhook/whatsapp",
+                "url": f"https://sdr-agent-five.vercel.app/api/webhook/whatsapp/{instance_name}",
                 "enabled": True,
                 "webhookByEvents": True,
                 "webhookBase64": False,
@@ -646,10 +646,18 @@ class handler(BaseHTTPRequestHandler):
                     "error": f"Database error: {str(e)}",
                     "debug_info": {"supabase_error": str(e)}
                 }, 500)
-        elif path == 'webhook/whatsapp':
+        elif path == 'webhook/whatsapp' or path.startswith('webhook/whatsapp/'):
             # Webhook endpoint for Evolution API with AI processing
             try:
+                # Extract instance from URL if provided (webhook/whatsapp/instance_name)
+                url_instance = None
+                if path.startswith('webhook/whatsapp/'):
+                    url_parts = path.split('/')
+                    if len(url_parts) >= 3:
+                        url_instance = url_parts[2]
+                
                 print(f"📨 Received webhook from Evolution API")
+                print(f"📨 URL instance: {url_instance}")
                 print(f"📨 Webhook data: {body}")
                 
                 # Process different webhook events
@@ -693,10 +701,10 @@ class handler(BaseHTTPRequestHandler):
                     
                     print(f"📩 New message from {from_user}: {message_text}")
                     
-                    # Get instance name from webhook data
-                    instance_name = instance_data.get('instanceName', '')
+                    # Get instance name from URL or webhook data
+                    instance_name = url_instance or instance_data.get('instanceName', '')
                     if not instance_name:
-                        print(f"⚠️ No instance name in webhook data")
+                        print(f"⚠️ No instance name in URL or webhook data")
                         self._send_json_response({
                             "status": "success", 
                             "received": True,
