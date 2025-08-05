@@ -114,9 +114,8 @@ export const clientsApi = {
     await api.delete(`/clients/${id}`);
   },
 
-  registerWebhook: async (id: string): Promise<void> => {
-    await api.post(`/clients/${id}/webhook`);
-  },
+  // Webhook is now configured automatically when creating client
+  // No need for manual webhook registration
 };
 
 // Playbook API functions
