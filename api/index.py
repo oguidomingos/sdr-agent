@@ -93,11 +93,11 @@ def create_evolution_instance(client_name, client_id):
     """Create an instance in Evolution API and configure webhook"""
     try:
         evolution_url = "https://evolutionapi.centralsupernova.com.br"
-        evolution_api_key = os.environ.get("EVOLUTION_API_KEY", "")
-        evolution_global_key = os.environ.get("EVOLUTION_GLOBAL_KEY", "")
+        evolution_api_key = os.environ.get("AUTHENTICATION_API_KEY", "")
+        evolution_global_key = os.environ.get("AUTHENTICATION_API_KEY", "")
         
-        if not evolution_api_key or not evolution_global_key:
-            print("⚠️ Evolution API keys not configured")
+        if not evolution_api_key:
+            print("⚠️ AUTHENTICATION_API_KEY not configured")
             return None
         
         # Generate instance name based on client (shorter name)
