@@ -496,6 +496,58 @@ class handler(BaseHTTPRequestHandler):
                 "message": "Webhook reconfiguration completed",
                 "timestamp": datetime.utcnow().isoformat()
             })
+        elif path == 'test-ai-processing':
+            # Test endpoint for AI processing
+            auth_header = self.headers.get('Authorization', '')
+            if not auth_header.startswith('Bearer '):
+                self._send_json_response({
+                    "error": "Authentication required"
+                }, 401)
+                return
+            
+            # Simulate webhook processing
+            try:
+                client_config = {
+                    "id": "3f30b5be-2e5d-4bf8-8c76-24f39d1d548e",
+                    "evolution_api_key": "509dbd54-c20c-4a5b-b889-a0494a861f5a",
+                    "gemini_api_key": "AIzaSyASsQw-arw3Mqp7q01qy37Wxkrj-Lo0oHk",
+                    "gemini_model": "gemini-2.0-flash-exp",
+                    "agent_persona": "Sou um assistente para testar as melhorias no webhook do Evolution API."
+                }
+                
+                # Test AI processing
+                ai_response = process_message_with_ai("oi", "5561936180578@s.whatsapp.net", client_config)
+                print(f"🤖 AI Test Response: {ai_response}")
+                
+                # Test sending message
+                if ai_response:
+                    success = send_whatsapp_message(
+                        ai_response,
+                        "5561936180578",
+                        "sdr_3f30b5be", 
+                        client_config["evolution_api_key"]
+                    )
+                    
+                    self._send_json_response({
+                        "status": "success",
+                        "ai_response": ai_response,
+                        "message_sent": success,
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+                else:
+                    self._send_json_response({
+                        "status": "error",
+                        "error": "AI did not generate response",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }, 500)
+                    
+            except Exception as e:
+                print(f"❌ Test AI processing error: {e}")
+                self._send_json_response({
+                    "status": "error", 
+                    "error": str(e),
+                    "timestamp": datetime.utcnow().isoformat()
+                }, 500)
         elif path.startswith('webhook/whatsapp'):
             # GET request to webhook - for testing purposes
             self._send_json_response({
