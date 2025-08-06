@@ -329,12 +329,18 @@ class handler(BaseHTTPRequestHandler):
         """Get request body as JSON"""
         try:
             content_length = int(self.headers.get('Content-Length', 0))
+            print(f"🔍 _get_request_body called - Content-Length: {content_length}")
             if content_length > 0:
                 body = self.rfile.read(content_length)
+                print(f"🔍 Raw body bytes: {body}")
                 decoded_body = body.decode('utf-8')
+                print(f"🔍 Decoded body: {decoded_body}")
                 # Try to parse JSON
                 parsed_body = json.loads(decoded_body)
+                print(f"🔍 Parsed JSON: {parsed_body}")
                 return parsed_body
+            else:
+                print("🔍 No content length - returning empty dict")
             return {}
         except json.JSONDecodeError as e:
             # Return error info for debugging
@@ -740,15 +746,28 @@ class handler(BaseHTTPRequestHandler):
                     if len(url_parts) >= 3:
                         url_instance = url_parts[2]
                 
-                print(f"🚨 WEBHOOK DEBUG - Full Headers: {dict(self.headers)}")
-                print(f"🚨 WEBHOOK DEBUG - Full Path: {self.path}")
-                print(f"🚨 WEBHOOK DEBUG - Parsed Path: {path}")
-                print(f"🚨 WEBHOOK DEBUG - URL Instance: {url_instance}")
-                print(f"🚨 WEBHOOK DEBUG - Raw Body: {body}")
-                print(f"🚨 WEBHOOK DEBUG - Timestamp: {datetime.utcnow().isoformat()}")
-                print(f"📨 Received webhook from Evolution API")
-                print(f"📨 URL instance: {url_instance}")
-                print(f"📨 Webhook data: {body}")
+                # FORCE PRINT - ESSENTIAL DEBUG INFO
+                print("=" * 80)
+                print(f"🚨 WEBHOOK RECEIVED AT {datetime.utcnow().isoformat()}")
+                print(f"🚨 METHOD: {getattr(self, 'command', 'UNKNOWN')}")
+                print(f"🚨 FULL PATH: {self.path}")
+                print(f"🚨 PARSED PATH: {path}")
+                print(f"🚨 URL INSTANCE: {url_instance}")
+                print(f"🚨 CONTENT-TYPE: {self.headers.get('Content-Type', 'NONE')}")
+                print(f"🚨 CONTENT-LENGTH: {self.headers.get('Content-Length', 'NONE')}")
+                print(f"🚨 RAW BODY TYPE: {type(body)}")
+                print(f"🚨 RAW BODY: {body}")
+                print("=" * 80)
+                
+                # Additional body analysis
+                if isinstance(body, dict) and body:
+                    print(f"🔍 BODY KEYS: {list(body.keys())}")
+                    for key, value in body.items():
+                        print(f"🔍 {key}: {value}")
+                elif body == {}:
+                    print("⚠️ EMPTY BODY RECEIVED")
+                else:
+                    print(f"⚠️ UNUSUAL BODY FORMAT: {body}")
                 
                 # Process different webhook events
                 event_type = body.get('event', '')
