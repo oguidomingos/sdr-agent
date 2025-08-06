@@ -666,6 +666,11 @@ class handler(BaseHTTPRequestHandler):
                 }, 400)
                 return
             
+            # Generate unique domain if empty to avoid constraint violations
+            domain = body.get('domain', '')
+            if not domain:
+                domain = f"{name.lower().replace(' ', '-')}-{int(time.time())}.sdr-agent.com"
+            
             # Get Supabase client
             supabase = get_supabase_client()
             if not supabase:
@@ -677,7 +682,7 @@ class handler(BaseHTTPRequestHandler):
                     "id": client_id,
                     "name": name,
                     "description": body.get('description', ''),
-                    "domain": body.get('domain', ''),
+                    "domain": domain,
                     "status": "active",
                     "whatsapp_number": body.get('whatsapp_number', ''),
                     "evolution_api_url": body.get('evolution_api_url', ''),
@@ -718,7 +723,7 @@ class handler(BaseHTTPRequestHandler):
                     "owner_id": "9eadc58c-4dd0-4ce6-9dd4-1cf55169c9db",  # Your user ID
                     "name": name,
                     "description": body.get('description', ''),
-                    "domain": body.get('domain', ''),
+                    "domain": domain,
                     "status": "active",
                     "whatsapp_number": body.get('whatsapp_number', ''),
                     "evolution_api_url": body.get('evolution_api_url', ''),
