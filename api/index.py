@@ -383,7 +383,7 @@ class handler(BaseHTTPRequestHandler):
             
             self._send_json_response({
                 "status": "healthy",
-                "version": "2.4.0",
+                "version": "2.5.0",
                 "cors": "enabled",
                 "vercel": os.environ.get("VERCEL", "0") == "1",
                 "supabase": supabase_status,
@@ -514,6 +514,9 @@ class handler(BaseHTTPRequestHandler):
     
     def do_POST(self):
         """Handle POST requests"""
+        # FORCE LOG - POST REQUEST DEBUG
+        print(f"🚨 POST REQUEST TO: {self.path}")
+        
         # Parse URL and query parameters
         parsed_url = urllib.parse.urlparse(self.path)
         path = parsed_url.path.strip('/')
