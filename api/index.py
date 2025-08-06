@@ -715,6 +715,21 @@ class handler(BaseHTTPRequestHandler):
                     "error": f"Database error: {str(e)}",
                     "debug_info": {"supabase_error": str(e)}
                 }, 500)
+        elif path == 'webhook/reconfigure':
+            # Endpoint to reconfigure all existing webhooks
+            auth_header = self.headers.get('Authorization', '')
+            if not auth_header.startswith('Bearer '):
+                self._send_json_response({
+                    "error": "Authentication required"
+                }, 401)
+                return
+            
+            success = reconfigure_existing_webhooks()
+            self._send_json_response({
+                "status": "success" if success else "partial_failure",
+                "message": "Webhook reconfiguration completed",
+                "timestamp": datetime.utcnow().isoformat()
+            })
         elif path == 'webhook/whatsapp' or path.startswith('webhook/whatsapp/'):
             # Webhook endpoint for Evolution API with AI processing
             try:
