@@ -387,7 +387,7 @@ class handler(BaseHTTPRequestHandler):
             
             self._send_json_response({
                 "status": "healthy",
-                "version": "2.5.0",
+                "version": "2.6.0",
                 "cors": "enabled",
                 "vercel": os.environ.get("VERCEL", "0") == "1",
                 "supabase": supabase_status,
