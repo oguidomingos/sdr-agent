@@ -772,22 +772,40 @@ class handler(BaseHTTPRequestHandler):
                 # Process different webhook events
                 event_type = body.get('event', '')
                 instance_data = body.get('instance', {})
+                
+                # Handle different instance formats
+                if isinstance(instance_data, str):
+                    # Instance is just a string (instance name)
+                    instance_name_from_data = instance_data
+                    instance_data = {'instanceName': instance_data}
+                else:
+                    # Instance is an object
+                    instance_name_from_data = instance_data.get('instanceName', '')
                 data = body.get('data', {})
                 
-                if event_type in ['MESSAGES_UPSERT', 'MESSAGE_CREATE', 'MESSAGES_UPDATE']:
-                    # Handle incoming message with AI processing
+                if event_type in ['MESSAGES_UPSERT', 'MESSAGE_CREATE', 'MESSAGES_UPDATE', 'messages.upsert', 'message.create']:
+                    # Handle incoming message with AI processing (support both formats)
                     print(f"🔍 Processing message event: {event_type}")
                     
-                    # Try different message extraction methods
-                    message = data.get('message', {})
-                    if not message:
-                        # Alternative: check if message is directly in data
-                        message = data if data.get('key') else {}
+                    # Handle the new webhook format where data contains key directly
+                    message_key = data.get('key', {})
+                    message_content = data.get('message', {})
                     
-                    print(f"🔍 Message object: {message}")
-                    message_key = message.get('key', {})
-                    from_user = message_key.get('remoteJid', '')
-                    from_me = message_key.get('fromMe', False)
+                    # If no key in data, try the old format
+                    if not message_key:
+                        message = data.get('message', {})
+                        message_key = message.get('key', {})
+                        from_user = message_key.get('remoteJid', '')
+                        from_me = message_key.get('fromMe', False)
+                    else:
+                        # New format: key and message are directly in data
+                        from_user = message_key.get('remoteJid', '')
+                        from_me = message_key.get('fromMe', False)
+                    
+                    print(f"🔍 Message key: {message_key}")
+                    print(f"🔍 Message content: {message_content}")
+                    print(f"🔍 From user: {from_user}")
+                    print(f"🔍 From me: {from_me}")
                     
                     # Skip messages sent by us
                     if from_me:
@@ -799,13 +817,11 @@ class handler(BaseHTTPRequestHandler):
                         })
                         return
                     
-                    # Extract message text with multiple fallbacks
-                    message_content = message.get('message', {})
+                    # Extract message text with new webhook format
                     message_text = (
                         message_content.get('conversation') or 
                         message_content.get('extendedTextMessage', {}).get('text') or
                         message_content.get('text') or
-                        message.get('text') or
                         data.get('text') or
                         ''
                     )
@@ -824,8 +840,8 @@ class handler(BaseHTTPRequestHandler):
                     
                     print(f"📩 New message from {from_user}: {message_text}")
                     
-                    # Get instance name from URL or webhook data
-                    instance_name = url_instance or instance_data.get('instanceName', '')
+                    # Get instance name from URL or webhook data (with new format support)
+                    instance_name = url_instance or instance_name_from_data or instance_data.get('instanceName', '')
                     if not instance_name:
                         print(f"⚠️ No instance name in URL or webhook data")
                         self._send_json_response({
