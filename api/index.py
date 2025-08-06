@@ -387,7 +387,7 @@ class handler(BaseHTTPRequestHandler):
             
             self._send_json_response({
                 "status": "healthy",
-                "version": "2.6.0",
+                "version": "2.7.0",
                 "cors": "enabled",
                 "vercel": os.environ.get("VERCEL", "0") == "1",
                 "supabase": supabase_status,
@@ -552,6 +552,94 @@ class handler(BaseHTTPRequestHandler):
                     "error": str(e),
                     "timestamp": datetime.utcnow().isoformat()
                 }, 500)
+        elif path.startswith('clients/') and path.endswith('/qrcode'):
+            # Get QR code for specific client
+            auth_header = self.headers.get('Authorization', '')
+            if not auth_header.startswith('Bearer '):
+                self._send_json_response({
+                    "error": "Authentication required"
+                }, 401)
+                return
+            
+            # Extract client ID from path (clients/{id}/qrcode)
+            path_parts = path.split('/')
+            if len(path_parts) >= 2:
+                client_id = path_parts[1]
+                
+                # Get client info from Supabase
+                supabase = get_supabase_client()
+                if not supabase:
+                    self._send_json_response({
+                        "error": "Database not available"
+                    }, 500)
+                    return
+                
+                try:
+                    result = (supabase.table('clients')
+                             .select('*')
+                             .eq('id', client_id)
+                             .execute())
+                    
+                    if not result.data:
+                        self._send_json_response({
+                            "error": "Client not found"
+                        }, 404)
+                        return
+                    
+                    client = result.data[0]
+                    evolution_instance = client.get('evolution_instance')
+                    
+                    if not evolution_instance:
+                        self._send_json_response({
+                            "error": "No Evolution instance configured"
+                        }, 400)
+                        return
+                    
+                    # Get QR code from Evolution API
+                    try:
+                        evolution_api_key = os.environ.get("AUTHENTICATION_API_KEY", "")
+                        if not evolution_api_key:
+                            self._send_json_response({
+                                "error": "Evolution API key not configured"
+                            }, 500)
+                            return
+                        
+                        evolution_url = "https://evolutionapi.centralsupernova.com.br"
+                        qr_url = f"{evolution_url}/instance/connect/{evolution_instance}"
+                        headers = {"apikey": evolution_api_key}
+                        
+                        qr_response = requests.get(qr_url, headers=headers, timeout=10)
+                        
+                        if qr_response.status_code == 200:
+                            qr_data = qr_response.json()
+                            self._send_json_response({
+                                "client_id": client_id,
+                                "client_name": client.get('name'),
+                                "evolution_instance": evolution_instance,
+                                "qr_code": qr_data.get('code'),
+                                "qr_base64": qr_data.get('base64'),
+                                "status": "ready"
+                            })
+                        else:
+                            self._send_json_response({
+                                "error": f"Failed to get QR code: {qr_response.status_code}",
+                                "evolution_instance": evolution_instance
+                            }, 500)
+                            
+                    except Exception as e:
+                        self._send_json_response({
+                            "error": f"Error getting QR code: {str(e)}",
+                            "evolution_instance": evolution_instance
+                        }, 500)
+                        
+                except Exception as e:
+                    self._send_json_response({
+                        "error": f"Database error: {str(e)}"
+                    }, 500)
+            else:
+                self._send_json_response({
+                    "error": "Invalid client ID"
+                }, 400)
         elif path.startswith('webhook/whatsapp'):
             # GET request to webhook - for testing purposes
             self._send_json_response({
@@ -1023,8 +1111,104 @@ class handler(BaseHTTPRequestHandler):
     
     def do_DELETE(self):
         """Handle DELETE requests"""
-        self._send_json_response({
-            "error": "DELETE method not implemented", 
-            "path": self.path,
-            "method": "DELETE"
-        }, 405)
+        # Parse URL and query parameters
+        parsed_url = urllib.parse.urlparse(self.path)
+        path = parsed_url.path.strip('/')
+        
+        # Remove /api prefix if present
+        if path.startswith('api/'):
+            path = path[4:]
+        
+        # Remove trailing slash
+        path = path.rstrip('/')
+        
+        if path.startswith('clients/'):
+            # Delete specific client
+            auth_header = self.headers.get('Authorization', '')
+            if not auth_header.startswith('Bearer '):
+                self._send_json_response({
+                    "error": "Authentication required"
+                }, 401)
+                return
+            
+            # Extract client ID from path
+            client_id = path.split('/')[-1]
+            if not client_id:
+                self._send_json_response({
+                    "error": "Client ID required"
+                }, 400)
+                return
+            
+            # Get Supabase client
+            supabase = get_supabase_client()
+            if not supabase:
+                self._send_json_response({
+                    "error": "Database not available"
+                }, 500)
+                return
+            
+            try:
+                # First, get client info to delete Evolution instance
+                client_result = (supabase.table('clients')
+                               .select('*')
+                               .eq('id', client_id)
+                               .execute())
+                
+                if not client_result.data:
+                    self._send_json_response({
+                        "error": "Client not found"
+                    }, 404)
+                    return
+                
+                client = client_result.data[0]
+                evolution_instance = client.get('evolution_instance')
+                
+                # Delete from Evolution API if instance exists
+                if evolution_instance:
+                    try:
+                        evolution_api_key = os.environ.get("AUTHENTICATION_API_KEY", "")
+                        if evolution_api_key:
+                            evolution_url = "https://evolutionapi.centralsupernova.com.br"
+                            delete_url = f"{evolution_url}/instance/delete/{evolution_instance}"
+                            headers = {"apikey": evolution_api_key}
+                            
+                            print(f"🗑️ Deleting Evolution instance: {evolution_instance}")
+                            delete_response = requests.delete(delete_url, headers=headers, timeout=10)
+                            
+                            if delete_response.status_code == 200:
+                                print(f"✅ Evolution instance deleted: {evolution_instance}")
+                            else:
+                                print(f"⚠️ Failed to delete Evolution instance: {delete_response.status_code}")
+                    except Exception as e:
+                        print(f"⚠️ Error deleting Evolution instance: {e}")
+                
+                # Delete from Supabase
+                delete_result = (supabase.table('clients')
+                               .delete()
+                               .eq('id', client_id)
+                               .execute())
+                
+                if delete_result.data:
+                    print(f"✅ Client deleted: {client['name']} ({client_id})")
+                    self._send_json_response({
+                        "message": "Client deleted successfully",
+                        "client_id": client_id,
+                        "evolution_instance": evolution_instance
+                    })
+                else:
+                    self._send_json_response({
+                        "error": "Failed to delete client"
+                    }, 500)
+                    
+            except Exception as e:
+                print(f"❌ Error deleting client: {e}")
+                self._send_json_response({
+                    "error": f"Database error: {str(e)}"
+                }, 500)
+        else:
+            self._send_json_response({
+                "error": "DELETE endpoint not found",
+                "path": self.path,
+                "method": "DELETE",
+                "available_endpoints": ["clients/{id}"]
+            }, 404)
