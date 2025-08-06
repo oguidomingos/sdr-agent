@@ -299,7 +299,7 @@ def save_message_to_database(client_id: str, user_phone: str, message_text: str,
             "message_direction": direction,
             "content": message_text,
             "timestamp": datetime.utcnow().isoformat(),
-            "status": "delivered",
+            "status": "sent",
             "lead_score": 0
         }
         
@@ -387,7 +387,7 @@ class handler(BaseHTTPRequestHandler):
             
             self._send_json_response({
                 "status": "healthy",
-                "version": "2.7.0",
+                "version": "2.8.0",
                 "cors": "enabled",
                 "vercel": os.environ.get("VERCEL", "0") == "1",
                 "supabase": supabase_status,
@@ -1035,11 +1035,13 @@ class handler(BaseHTTPRequestHandler):
                         print(f"🤖 AI generated response: {ai_response}")
                         
                         # Send AI response via WhatsApp
+                        # Use client's key or fallback to environment key
+                        api_key = client_config.get('evolution_api_key', '') or os.environ.get("AUTHENTICATION_API_KEY", "")
                         success = send_whatsapp_message(
                             ai_response,
                             from_user,
                             instance_name,
-                            client_config.get('evolution_api_key', '')
+                            api_key
                         )
                         
                         if success:
