@@ -64,7 +64,6 @@ def configure_evolution_webhook(instance_name, evolution_url, evolution_api_key)
                 "webhookBase64": False,
                 "events": [
                     "MESSAGES_UPSERT",
-                    "MESSAGE_CREATE",
                     "MESSAGES_UPDATE", 
                     "SEND_MESSAGE",
                     "CONNECTION_UPDATE",
@@ -173,6 +172,11 @@ def create_evolution_instance(client_name, client_id):
             
             # Step 2: Configure webhook automatically
             webhook_configured = configure_evolution_webhook(instance_name, evolution_url, evolution_api_key)
+            
+            if webhook_configured:
+                print(f"✅ Webhook configured for new instance: {instance_name}")
+            else:
+                print(f"❌ Failed to configure webhook for instance: {instance_name}")
             
             return {
                 "instance_name": instance_name,
@@ -838,7 +842,7 @@ class handler(BaseHTTPRequestHandler):
                     instance_name_from_data = instance_data.get('instanceName', '')
                 data = body.get('data', {})
                 
-                if event_type in ['MESSAGES_UPSERT', 'MESSAGE_CREATE', 'MESSAGES_UPDATE', 'messages.upsert', 'message.create']:
+                if event_type in ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'messages.upsert', 'messages.update']:
                     # Handle incoming message with AI processing (support both formats)
                     print(f"🔍 Processing message event: {event_type}")
                     
