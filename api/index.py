@@ -64,8 +64,12 @@ def configure_evolution_webhook(instance_name, evolution_url, evolution_api_key)
                 "webhookBase64": False,
                 "events": [
                     "MESSAGES_UPSERT",
-                    "SEND_MESSAGE", 
-                    "CONNECTION_UPDATE"
+                    "MESSAGE_CREATE",
+                    "MESSAGES_UPDATE", 
+                    "SEND_MESSAGE",
+                    "CONNECTION_UPDATE",
+                    "PRESENCE_UPDATE",
+                    "QRCODE_UPDATED"
                 ]
             }
         }
@@ -87,6 +91,48 @@ def configure_evolution_webhook(instance_name, evolution_url, evolution_api_key)
             
     except Exception as e:
         print(f"❌ Webhook configuration exception: {e}")
+        return False
+
+def reconfigure_existing_webhooks():
+    """Reconfigure webhooks for all existing clients"""
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            return False
+            
+        # Get all clients with Evolution instances
+        result = (supabase.table('clients')
+                 .select('*')
+                 .neq('evolution_instance', None)
+                 .execute())
+        
+        if not result.data:
+            print("No clients with Evolution instances found")
+            return True
+            
+        evolution_url = "https://evolutionapi.centralsupernova.com.br"
+        evolution_api_key = os.environ.get("AUTHENTICATION_API_KEY", "")
+        
+        if not evolution_api_key:
+            print("⚠️ AUTHENTICATION_API_KEY not configured")
+            return False
+            
+        success_count = 0
+        for client in result.data:
+            instance_name = client.get('evolution_instance')
+            if instance_name:
+                success = configure_evolution_webhook(instance_name, evolution_url, evolution_api_key)
+                if success:
+                    success_count += 1
+                    print(f"✅ Reconfigured webhook for {client.get('name', instance_name)}")
+                else:
+                    print(f"❌ Failed to reconfigure webhook for {client.get('name', instance_name)}")
+        
+        print(f"🔧 Reconfigured {success_count} out of {len(result.data)} webhooks")
+        return success_count > 0
+        
+    except Exception as e:
+        print(f"❌ Error reconfiguring webhooks: {e}")
         return False
 
 def create_evolution_instance(client_name, client_id):
@@ -429,6 +475,29 @@ class handler(BaseHTTPRequestHandler):
                     "error": f"Database error: {str(e)}",
                     "debug_info": {"supabase_error": str(e)}
                 }, 500)
+        elif path == 'webhook/reconfigure':
+            # Endpoint to reconfigure all existing webhooks
+            auth_header = self.headers.get('Authorization', '')
+            if not auth_header.startswith('Bearer '):
+                self._send_json_response({
+                    "error": "Authentication required"
+                }, 401)
+                return
+            
+            success = reconfigure_existing_webhooks()
+            self._send_json_response({
+                "status": "success" if success else "partial_failure",
+                "message": "Webhook reconfiguration completed",
+                "timestamp": datetime.utcnow().isoformat()
+            })
+        elif path.startswith('webhook/whatsapp'):
+            # GET request to webhook - for testing purposes
+            self._send_json_response({
+                "message": "Webhook endpoint is active",
+                "path": path,
+                "timestamp": datetime.utcnow().isoformat(),
+                "status": "ready"
+            })
         else:
             self._send_json_response({
                 "error": "Endpoint not found",
@@ -656,6 +725,12 @@ class handler(BaseHTTPRequestHandler):
                     if len(url_parts) >= 3:
                         url_instance = url_parts[2]
                 
+                print(f"🚨 WEBHOOK DEBUG - Full Headers: {dict(self.headers)}")
+                print(f"🚨 WEBHOOK DEBUG - Full Path: {self.path}")
+                print(f"🚨 WEBHOOK DEBUG - Parsed Path: {path}")
+                print(f"🚨 WEBHOOK DEBUG - URL Instance: {url_instance}")
+                print(f"🚨 WEBHOOK DEBUG - Raw Body: {body}")
+                print(f"🚨 WEBHOOK DEBUG - Timestamp: {datetime.utcnow().isoformat()}")
                 print(f"📨 Received webhook from Evolution API")
                 print(f"📨 URL instance: {url_instance}")
                 print(f"📨 Webhook data: {body}")
@@ -665,9 +740,17 @@ class handler(BaseHTTPRequestHandler):
                 instance_data = body.get('instance', {})
                 data = body.get('data', {})
                 
-                if event_type == 'MESSAGES_UPSERT':
+                if event_type in ['MESSAGES_UPSERT', 'MESSAGE_CREATE', 'MESSAGES_UPDATE']:
                     # Handle incoming message with AI processing
+                    print(f"🔍 Processing message event: {event_type}")
+                    
+                    # Try different message extraction methods
                     message = data.get('message', {})
+                    if not message:
+                        # Alternative: check if message is directly in data
+                        message = data if data.get('key') else {}
+                    
+                    print(f"🔍 Message object: {message}")
                     message_key = message.get('key', {})
                     from_user = message_key.get('remoteJid', '')
                     from_me = message_key.get('fromMe', False)
@@ -682,13 +765,19 @@ class handler(BaseHTTPRequestHandler):
                         })
                         return
                     
-                    # Extract message text
+                    # Extract message text with multiple fallbacks
                     message_content = message.get('message', {})
                     message_text = (
                         message_content.get('conversation') or 
                         message_content.get('extendedTextMessage', {}).get('text') or
+                        message_content.get('text') or
+                        message.get('text') or
+                        data.get('text') or
                         ''
                     )
+                    
+                    print(f"🔍 Message content structure: {message_content}")
+                    print(f"🔍 Extracted message text: '{message_text}'")
                     
                     if not message_text:
                         print(f"⚠️ No text content found in message")
