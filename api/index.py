@@ -120,7 +120,7 @@ def process_with_gemini_ai(message_text: str, client_config: Dict[str, Any]) -> 
         # Configure Gemini
         gemini_key = client_config.get('gemini_api_key')
         if not gemini_key:
-            print("⚠️ No Gemini API key configured")
+            print("⚠️ No Gemini API key configured - v2.10.0")
             return "Desculpe, não consegui processar sua mensagem no momento."
         
         genai.configure(api_key=gemini_key)
