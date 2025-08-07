@@ -24,30 +24,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Initialize auth state from localStorage
   useEffect(() => {
-    const savedToken = localStorage.getItem('auth_token');
+    console.log('AuthContext: Initializing auth state...');
+    
+    // Check both token keys for backward compatibility
+    const authToken = localStorage.getItem('auth_token');
+    const accessToken = localStorage.getItem('access_token');
+    const savedToken = authToken || accessToken;
+    
+    console.log('AuthContext: Found tokens:', { authToken: !!authToken, accessToken: !!accessToken, savedToken: !!savedToken });
+    
     if (savedToken) {
+      console.log('AuthContext: Setting token and fetching user data...');
       setToken(savedToken);
       // Set the token in axios defaults immediately
       api.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
+      
+      // Standardize to auth_token and remove old access_token if exists
+      localStorage.setItem('auth_token', savedToken);
+      if (accessToken) {
+        localStorage.removeItem('access_token');
+      }
+      
       // Verify token and fetch user data
       fetchUserData(savedToken);
     } else {
+      console.log('AuthContext: No token found, setting loading false');
       setIsLoading(false);
     }
   }, []);
 
   const fetchUserData = async (authToken: string) => {
     try {
+      console.log('AuthContext: Fetching user data with token...');
       setIsLoading(true);
-      const userData = await authApi.me();
-      setUser(userData);
+      
+      // Add timeout to prevent infinite loading
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('API timeout')), 10000)
+      );
+      
+      const userData = await Promise.race([
+        authApi.me(),
+        timeoutPromise
+      ]);
+      
+      console.log('AuthContext: User data fetched successfully:', userData);
+      setUser(userData as any);
     } catch (error: any) {
-      console.error('Failed to fetch user data:', error);
+      console.error('AuthContext: Failed to fetch user data:', error);
       // Token might be expired or invalid, clear it
-      if (error.response?.status === 401) {
+      if (error.response?.status === 401 || error.message === 'API timeout') {
+        console.log('AuthContext: Token invalid or timeout, logging out...');
         logout();
       }
     } finally {
+      console.log('AuthContext: Setting loading to false');
       setIsLoading(false);
     }
   };
@@ -93,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setToken(null);
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('access_token'); // Remove both token types
     localStorage.removeItem('selectedClientId'); // Clear selected client as well
     
     // Clear the authorization header

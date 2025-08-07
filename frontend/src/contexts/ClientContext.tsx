@@ -3,6 +3,7 @@ import { Client, ClientCreateData, ClientUpdateData } from '@/types/api';
 import { clientsApi } from '@/lib/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from './AuthContext';
 
 interface ClientContextType {
   clients: Client[];
@@ -17,6 +18,7 @@ interface ClientContextType {
 const ClientContext = createContext<ClientContextType | undefined>(undefined);
 
 export function ClientProvider({ children }: { children: ReactNode }) {
+  const { isAuthenticated } = useAuth();
   const [selectedClient, setSelectedClient] = useState<Client | null>(() => {
     // Try to load selected client from localStorage
     const savedClient = localStorage.getItem('selectedClient');
@@ -35,6 +37,7 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     queryKey: ['clients'],
     queryFn: () => clientsApi.getAll().then(res => res.clients),
     staleTime: 5 * 60 * 1000, // 5 minutes
+    enabled: isAuthenticated, // Only fetch when authenticated
   });
 
   const deleteMutation = useMutation({

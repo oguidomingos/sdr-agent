@@ -14,8 +14,8 @@ import Reports from "./pages/Reports";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
-import LoginPage from "./pages/Login";
-import RegisterPage from "./pages/Register";
+import SimpleLogin from "./pages/SimpleLogin";
+import SimpleRegister from "./pages/SimpleRegister";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,35 +30,32 @@ const queryClient = new QueryClient({
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
-      <ClientProvider>
-        <TooltipProvider>
-          <Toaster />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/login" element={
-                <ProtectedRoute requireAuth={false}>
-                  <LoginPage />
-                </ProtectedRoute>
-              } />
-              <Route path="/register" element={
-                <ProtectedRoute requireAuth={false}>
-                  <RegisterPage />
-                </ProtectedRoute>
-              } />
-              <Route path="/app/*" element={<AppLayout />}>
-                <Route index element={<Dashboard />} />
-                <Route path="clients" element={<Clients />} />
-                <Route path="playbooks" element={<Playbooks />} />
-                <Route path="reports" element={<Reports />} />
-                <Route path="settings" element={<Settings />} />
-              </Route>
-              <Route path="/" element={<Navigate to="/app" />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
-      </ClientProvider>
+      <TooltipProvider>
+        <Toaster />
+        <BrowserRouter>
+          <Routes>
+            {/* Public routes without ClientProvider */}
+            <Route path="/login" element={<SimpleLogin />} />
+            <Route path="/register" element={<SimpleRegister />} />
+            
+            {/* Protected routes with ClientProvider */}
+            <Route path="/app/*" element={
+              <ClientProvider>
+                <AppLayout />
+              </ClientProvider>
+            }>
+              <Route index element={<Dashboard />} />
+              <Route path="clients" element={<Clients />} />
+              <Route path="playbooks" element={<Playbooks />} />
+              <Route path="reports" element={<Reports />} />
+              <Route path="settings" element={<Settings />} />
+            </Route>
+            
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
     </AuthProvider>
   </QueryClientProvider>
 );
