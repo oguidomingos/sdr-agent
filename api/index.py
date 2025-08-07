@@ -22,7 +22,44 @@ _supabase_client = None
 # Message cooldown system
 message_buffer = defaultdict(list)  # {user_phone: [messages]}
 cooldown_timers = {}  # {user_phone: timer_object}
+processing_users = set()  # Track users currently being processed
 COOLDOWN_SECONDS = 90  # 1.5 minutes
+
+def should_process_after_buffer(user_phone: str, client_id: str, cooldown_seconds: int = 90) -> bool:
+    """Check if we should process buffered messages based on last_processed_at"""
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            print("⚠️ No Supabase client, not processing")
+            return False
+            
+        # Check existing cooldown record
+        result = supabase.table('message_cooldown')\
+            .select('last_processed_at')\
+            .eq('user_phone', user_phone)\
+            .execute()
+        
+        now = datetime.now(timezone.utc)
+        
+        if not result.data or not result.data[0].get('last_processed_at'):
+            print(f"🆕 No previous processing for {user_phone}, will wait for timer")
+            return False  # Wait for timer
+            
+        record = result.data[0]
+        last_processed_at = record['last_processed_at']
+        if isinstance(last_processed_at, str):
+            last_processed_at = datetime.fromisoformat(last_processed_at.replace('Z', '+00:00'))
+        if last_processed_at.tzinfo is None:
+            last_processed_at = last_processed_at.replace(tzinfo=timezone.utc)
+        time_diff = (now - last_processed_at).total_seconds()
+        
+        print(f"⏱️ Last processed was {time_diff:.1f}s ago (cooldown: {cooldown_seconds}s)")
+        
+        return time_diff >= cooldown_seconds
+        
+    except Exception as e:
+        print(f"❌ Error checking processing cooldown: {e}")
+        return False  # Default to not processing immediately
 
 def should_process_message_db(user_phone: str, client_id: str, cooldown_seconds: int = 90) -> bool:
     """Check if message should be processed based on database cooldown state"""
@@ -71,53 +108,251 @@ def should_process_message_db(user_phone: str, client_id: str, cooldown_seconds:
             return True
         return True  # Process on error to avoid blocking
 
-def add_message_to_cooldown_db(user_phone: str, message_text: str, instance_name: str, client_config: Dict[str, Any], user_name: str = ""):
-    """Add message to database cooldown system"""
+def save_message_to_database(client_id: str, user_phone: str, content: str, direction: str, user_name: str = "") -> bool:
+    """Save message to database with consistent schema"""
     try:
-        print(f"📥 Adding message to DB cooldown for {user_phone}: {message_text}")
-        
         supabase = get_supabase_client()
         if not supabase:
-            print("⚠️ No Supabase client available")
-            return
+            return False
             
-        client_id = client_config.get('id')
-        now = datetime.now(timezone.utc)
+        message_data = {
+            'client_id': client_id,
+            'user_phone': user_phone,
+            'content': content,
+            'direction': direction,
+            'user_name': user_name,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
         
-        # Get existing cooldown record
+        # Try to save to messages table
+        try:
+            result = supabase.table('messages').insert(message_data).execute()
+            print(f"💾 Saved {direction} message to database")
+            return bool(result.data)
+        except Exception as e:
+            print(f"⚠️ Could not save message to database: {e}")
+            return False
+        
+    except Exception as e:
+        print(f"❌ Error saving message: {e}")
+        return False
+
+def add_message_to_cooldown_db(user_phone: str, message_text: str, instance_name: str, client_config: Dict[str, Any], user_name: str = ""):
+    """Legacy function - redirects to enhanced version"""
+    return add_message_to_cooldown_db_enhanced(user_phone, message_text, instance_name, client_config, user_name)
+
+def check_and_process_expired_messages():
+    """Check for expired messages across all users and process them (serverless-compatible)"""
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            print("⚠️ No Supabase client available for expired message check")
+            return
+        
+        print("🔍 Checking for expired messages across all users...")
+        
+        # Get all records with pending messages, ordered by last_processed_at to prioritize oldest
         result = supabase.table('message_cooldown')\
-            .select('pending_messages')\
+            .select('*')\
+            .neq('pending_messages', '[]')\
+            .order('last_processed_at', desc=False)\
+            .execute()
+        
+        if not result.data:
+            print("✅ No pending messages found")
+            return
+        
+        now = datetime.now(timezone.utc)
+        processed_count = 0
+        checked_count = 0
+        
+        for record in result.data:
+            user_phone = record.get('user_phone')
+            client_id = record.get('client_id')
+            pending_messages = record.get('pending_messages', [])
+            last_processed_at = record.get('last_processed_at')
+            cooldown_seconds = record.get('cooldown_seconds', COOLDOWN_SECONDS)
+            processing_lock = record.get('processing_lock', False)
+            
+            checked_count += 1
+            
+            if not pending_messages:
+                continue
+                
+            if processing_lock:
+                print(f"⚠️ User {user_phone} is currently being processed, skipping")
+                continue
+            
+            # Check if enough time has passed since last processing
+            should_process = True
+            time_since_processed = 0
+            
+            if last_processed_at:
+                try:
+                    last_proc_dt = datetime.fromisoformat(last_processed_at.replace('Z', '+00:00'))
+                    if last_proc_dt.tzinfo is None:
+                        last_proc_dt = last_proc_dt.replace(tzinfo=timezone.utc)
+                    time_since_processed = (now - last_proc_dt).total_seconds()
+                    should_process = time_since_processed >= cooldown_seconds
+                    
+                    if should_process:
+                        print(f"⏰ Found expired messages for {user_phone} ({time_since_processed:.1f}s ago, {len(pending_messages)} messages)")
+                    else:
+                        print(f"⏳ Messages for {user_phone} not ready yet ({time_since_processed:.1f}s ago, need {cooldown_seconds}s)")
+                except Exception as e:
+                    print(f"❌ Error parsing timestamp for {user_phone}: {e}")
+                    should_process = True  # Process on error
+            else:
+                print(f"🆕 User {user_phone} has never been processed, checking message age...")
+                # If never processed, check the age of the oldest pending message
+                if pending_messages:
+                    try:
+                        oldest_msg = min(pending_messages, key=lambda x: x.get('timestamp', ''))
+                        oldest_timestamp = oldest_msg.get('timestamp')
+                        if oldest_timestamp:
+                            oldest_dt = datetime.fromisoformat(oldest_timestamp.replace('Z', '+00:00'))
+                            if oldest_dt.tzinfo is None:
+                                oldest_dt = oldest_dt.replace(tzinfo=timezone.utc)
+                            time_since_oldest = (now - oldest_dt).total_seconds()
+                            should_process = time_since_oldest >= cooldown_seconds
+                            print(f"📅 Oldest message is {time_since_oldest:.1f}s old, should process: {should_process}")
+                    except Exception as e:
+                        print(f"❌ Error checking oldest message for {user_phone}: {e}")
+                        should_process = True
+            
+            if should_process:
+                # Get client configuration
+                client_result = supabase.table('clients').select('*').eq('id', client_id).execute()
+                if not client_result.data:
+                    print(f"⚠️ Client not found for {user_phone}")
+                    continue
+                
+                client_config = client_result.data[0]
+                instance_name = client_config.get('evolution_instance')
+                
+                if instance_name:
+                    print(f"🚀 Processing expired messages for {user_phone}")
+                    process_pending_messages_db(user_phone, instance_name, client_config)
+                    processed_count += 1
+                else:
+                    print(f"⚠️ No instance name for {user_phone}")
+        
+        print(f"📊 Checked {checked_count} users, processed {processed_count} with expired messages")
+        
+    except Exception as e:
+        print(f"❌ Error checking expired messages: {e}")
+
+def should_process_immediately(user_phone: str, client_id: str, cooldown_seconds: int = 90) -> bool:
+    """Check if messages should be processed immediately based on timestamps (serverless-compatible)"""
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            print("⚠️ No Supabase client, processing immediately")
+            return True
+            
+        # Check existing cooldown record
+        result = supabase.table('message_cooldown')\
+            .select('last_processed_at, pending_messages')\
             .eq('user_phone', user_phone)\
             .execute()
         
-        pending_messages = []
-        if result.data:
-            pending_messages = result.data[0].get('pending_messages', [])
+        now = datetime.now(timezone.utc)
         
-        # Add new message to pending list
-        new_message = {
-            'text': message_text,
-            'timestamp': now.isoformat(),
-            'instance_name': instance_name
-        }
-        pending_messages.append(new_message)
+        if not result.data:
+            print(f"🆕 First message from {user_phone}, will buffer and wait")
+            return False  # First message, wait for cooldown
+            
+        record = result.data[0]
+        last_processed_at = record.get('last_processed_at')
+        pending_messages = record.get('pending_messages', [])
         
-        # Update cooldown record
-        supabase.table('message_cooldown').upsert({
-            'user_phone': user_phone,
-            'client_id': client_id,
-            'last_message_at': now.isoformat(),
-            'pending_messages': pending_messages,
-            'cooldown_seconds': COOLDOWN_SECONDS
-        }).execute()
-        
-        print(f"📋 Updated DB cooldown - {len(pending_messages)} pending messages")
+        # If no previous processing, wait for cooldown
+        if not last_processed_at:
+            print(f"🆕 No previous processing for {user_phone}, will buffer and wait")
+            return False
+            
+        # Calculate time since last processing
+        try:
+            last_proc_dt = datetime.fromisoformat(last_processed_at.replace('Z', '+00:00'))
+            if last_proc_dt.tzinfo is None:
+                last_proc_dt = last_proc_dt.replace(tzinfo=timezone.utc)
+            proc_diff = (now - last_proc_dt).total_seconds()
+            
+            should_process = proc_diff >= cooldown_seconds
+            print(f"⏱️ Time since last processed: {proc_diff:.1f}s, should process: {should_process}")
+            
+            return should_process
+            
+        except Exception as e:
+            print(f"❌ Error parsing last_processed_at: {e}")
+            return True  # Process on error to avoid blocking
         
     except Exception as e:
-        print(f"❌ Error adding message to DB cooldown: {e}")
+        print(f"❌ Error checking immediate processing: {e}")
+        return True  # Process on error to avoid blocking
 
-def process_with_gemini_ai(message_text: str, client_config: Dict[str, Any]) -> str:
-    """Process message with Gemini AI and return response"""
+def start_cooldown_timer(user_phone: str, instance_name: str, client_config: Dict[str, Any]):
+    """Legacy timer function - now replaced by timestamp-based checking"""
+    # This function is kept for compatibility but no longer starts actual timers
+    # The new system uses timestamp-based checking in check_and_process_expired_messages()
+    print(f"⏲️ Timer logic replaced by timestamp checking for {user_phone}")
+    pass
+
+def get_conversation_history(user_phone: str, client_id: str, limit: int = 10) -> str:
+    """Get recent conversation history for context"""
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            print(f"🔍 DEBUG HISTORY - No Supabase client available")
+            return ""
+        
+        print(f"🔍 DEBUG HISTORY - Searching for messages with client_id={client_id}, user_phone={user_phone}")
+        
+        # Get recent messages
+        result = supabase.table('messages')\
+            .select('content, direction, timestamp')\
+            .eq('client_id', client_id)\
+            .eq('user_phone', user_phone)\
+            .order('timestamp', desc=True)\
+            .limit(limit)\
+            .execute()
+        
+        print(f"🔍 DEBUG HISTORY - Query result: {len(result.data if result.data else [])} messages found")
+        
+        if not result.data:
+            # Try to see if there are any messages for this client at all
+            all_messages_result = supabase.table('messages')\
+                .select('user_phone, direction, content')\
+                .eq('client_id', client_id)\
+                .limit(5)\
+                .execute()
+            print(f"🔍 DEBUG HISTORY - Total messages for client: {len(all_messages_result.data if all_messages_result.data else [])}")
+            if all_messages_result.data:
+                for msg in all_messages_result.data[:3]:
+                    print(f"🔍 DEBUG HISTORY - Sample message: {msg.get('user_phone')} - {msg.get('direction')} - {msg.get('content', '')[:50]}")
+            return ""
+        
+        # Build conversation history
+        history = []
+        for msg in reversed(result.data):  # Reverse to get chronological order
+            direction = msg.get('direction', '')
+            content = msg.get('content', '')
+            
+            if direction == 'inbound':
+                history.append(f"Cliente: {content}")
+            elif direction == 'outbound':
+                history.append(f"Você: {content}")
+        
+        final_history = "\n".join(history) if history else ""
+        print(f"🔍 DEBUG HISTORY - Final history length: {len(final_history)}")
+        return final_history
+        
+    except Exception as e:
+        print(f"❌ Error getting conversation history: {e}")
+        return ""
+
+def process_with_gemini_ai(message_text: str, client_config: Dict[str, Any], user_phone: str = "") -> str:
+    """Process message with Gemini AI and return response with context"""
     try:
         import google.generativeai as genai
         
@@ -130,23 +365,57 @@ def process_with_gemini_ai(message_text: str, client_config: Dict[str, Any]) -> 
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel(client_config.get('gemini_model', 'gemini-2.0-flash'))
         
+        # Get conversation history for context
+        client_id = client_config.get('id', '')
+        conversation_history = get_conversation_history(user_phone, client_id) if user_phone and client_id else ""
+        
+        # Debug information
+        print(f"🔍 DEBUG - Client ID: {client_id}")
+        print(f"🔍 DEBUG - User phone: {user_phone}")
+        print(f"🔍 DEBUG - Conversation history length: {len(conversation_history) if conversation_history else 0}")
+        
         # Create prompt with agent configuration
-        agent_prompt = client_config.get('agent_prompt', '')
+        agent_prompt = client_config.get('agent_persona', client_config.get('agent_prompt', ''))
         agent_name = client_config.get('agent_name', 'Assistente')
         
-        system_prompt = f"""Você é {agent_name}, um assistente de vendas especializado.
+        print(f"🔍 DEBUG - Agent name: {agent_name}")
+        print(f"🔍 DEBUG - Agent prompt length: {len(agent_prompt) if agent_prompt else 0}")
+        if agent_prompt:
+            print(f"🔍 DEBUG - Agent prompt preview: {agent_prompt[:100]}...")
         
+        # Build context-aware prompt
+        context_section = ""
+        if conversation_history:
+            context_section = f"""
+### HISTÓRICO DA CONVERSA:
+{conversation_history}
+
+### IMPORTANTE:
+- Use as informações do histórico para dar continuidade à conversa
+- NÃO repita perguntas que já foram respondidas
+- Construa sobre as informações já fornecidas pelo cliente
+- Mantenha a personalidade e energia do Jordan Belfort
+"""
+        
+        system_prompt = f"""Você é {agent_name}.
+
 {agent_prompt}
 
-Responda de forma natural, conversacional e focada em vendas. 
-Sua resposta deve ser concisa (máximo 2-3 parágrafos).
+{context_section}
+
+### MENSAGEM ATUAL DO CLIENTE:
+{message_text}
+
+Responda de forma natural, conversacional e focada em vendas, usando o contexto da conversa anterior.
 """
         
         # Generate response
-        response = model.generate_content(f"{system_prompt}\n\nMensagem do cliente: {message_text}")
+        response = model.generate_content(system_prompt)
         ai_response = response.text.strip()
         
         print(f"🤖 Gemini response: {ai_response[:100]}...")
+        print(f"📚 Used context: {'Yes' if conversation_history else 'No'}")
+        
         return ai_response
         
     except Exception as e:
@@ -154,7 +423,7 @@ Sua resposta deve ser concisa (máximo 2-3 parágrafos).
         return "Desculpe, não consegui processar sua mensagem no momento. Um atendente entrará em contato em breve."
 
 def send_whatsapp_message(user_phone: str, message: str, instance_name: str, client_config: Dict[str, Any]) -> bool:
-    """Send WhatsApp message via Evolution API"""
+    """Send WhatsApp message via Evolution API with enhanced error handling"""
     try:
         import requests
         
@@ -163,6 +432,8 @@ def send_whatsapp_message(user_phone: str, message: str, instance_name: str, cli
 
         if not evolution_url or not evolution_key:
             print("⚠️ Evolution API not configured")
+            print(f"   URL: {evolution_url or 'NOT SET'}")
+            print(f"   Key: {'SET' if evolution_key else 'NOT SET'}")
             return False
             
         # Clean phone number
@@ -180,24 +451,56 @@ def send_whatsapp_message(user_phone: str, message: str, instance_name: str, cli
             'text': message
         }
         
+        print(f"📡 Sending message to Evolution API:")
+        print(f"   URL: {url}")
+        print(f"   Headers: {{'Content-Type': 'application/json', 'apikey': '{evolution_key[:8]}...{evolution_key[-4:]}'}}")
+        print(f"   Payload: {payload}")
+        
         response = requests.post(url, json=payload, headers=headers, timeout=10)
 
         if response.status_code in (200, 201):
-            print(f"📤 Message sent to {user_phone}")
+            print(f"✅ Message sent successfully to {user_phone}")
+            print(f"   Response: {response.text[:200]}...")
             return True
         else:
             print(f"❌ Failed to send message: {response.status_code} - {response.text}")
+            
+            # Enhanced error logging for specific status codes
+            if response.status_code == 401:
+                print("🔐 Authentication Error Details:")
+                print(f"   - API Key: {evolution_key[:8]}...{evolution_key[-4:]}")
+                print(f"   - URL: {evolution_url}")
+                print(f"   - Instance: {instance_name}")
+                print("   - Possible causes: Invalid API key, expired key, or incorrect instance name")
+            elif response.status_code == 404:
+                print("🔍 Not Found Error Details:")
+                print(f"   - Instance '{instance_name}' may not exist or be disconnected")
+                print(f"   - Check if WhatsApp instance is connected")
+            elif response.status_code == 500:
+                print("🔧 Server Error Details:")
+                print("   - Evolution API server error")
+                print("   - Check Evolution API service status")
+            
             return False
             
+    except requests.exceptions.Timeout:
+        print(f"⏰ Timeout sending message to {user_phone}")
+        print("   - Evolution API took too long to respond")
+        return False
+    except requests.exceptions.ConnectionError:
+        print(f"🌐 Connection error sending message to {user_phone}")
+        print(f"   - Cannot connect to Evolution API at {evolution_url}")
+        return False
     except Exception as e:
-        print(f"❌ Error sending WhatsApp message: {e}")
+        print(f"❌ Unexpected error sending WhatsApp message: {e}")
+        print(f"   - Error type: {type(e).__name__}")
+        import traceback
+        print(f"   - Traceback: {traceback.format_exc()}")
         return False
 
 def process_pending_messages_db(user_phone: str, instance_name: str, client_config: Dict[str, Any], current_message: str = None, user_name: str = ""):
-    """Process all pending messages from database after cooldown"""
+    """Process all pending messages from database after cooldown with processing lock"""
     try:
-        print(f"⏰ Processing pending messages from DB for {user_phone}")
-        
         supabase = get_supabase_client()
         if not supabase:
             print("⚠️ No Supabase client available")
@@ -205,6 +508,24 @@ def process_pending_messages_db(user_phone: str, instance_name: str, client_conf
             if current_message:
                 process_single_message(user_phone, current_message, instance_name, client_config, user_name)
             return
+        
+        # Set processing lock to prevent concurrent processing
+        try:
+            supabase.table('message_cooldown').update({
+                'processing_lock': True
+            }).eq('user_phone', user_phone).execute()
+            print(f"🔒 [PROCESSING] Set processing lock for {user_phone}")
+        except Exception as e:
+            print(f"⚠️ Could not set processing lock: {e}")
+        
+        # Also use in-memory protection as backup
+        if user_phone in processing_users:
+            print(f"⚠️ [PROCESSING] User {user_phone} is already being processed, skipping")
+            return
+        
+        processing_users.add(user_phone)
+        
+        print(f"⏰ [PROCESSING] Starting to process pending messages for {user_phone}")
             
         # Get pending messages
         result = supabase.table('message_cooldown')\
@@ -234,9 +555,13 @@ def process_pending_messages_db(user_phone: str, instance_name: str, client_conf
         print(f"📝 Combined message text: {combined_text}")
         
         # Process with AI
+        print(f"🧠 [PROCESSING] Sending combined text to Gemini: '{combined_text[:100]}...'")
         response = process_with_gemini_ai(combined_text, client_config)
         if response:
+            print(f"📤 [PROCESSING] Sending single response to {user_phone}: '{response[:100]}...'")
             send_whatsapp_message(user_phone, response, instance_name, client_config)
+        else:
+            print(f"❌ [PROCESSING] No response from Gemini for {user_phone}")
         
         # Save messages to database
         client_id = client_config.get('id')
@@ -251,10 +576,12 @@ def process_pending_messages_db(user_phone: str, instance_name: str, client_conf
         now = datetime.now(timezone.utc)
         supabase.table('message_cooldown').update({
             'pending_messages': [],
-            'last_processed_at': now.isoformat()
+            'last_processed_at': now.isoformat(),
+            'processing_lock': False
         }).eq('user_phone', user_phone).execute()
         
-        print(f"✅ Processed and cleared {len(pending_messages)} messages for {user_phone}")
+        print(f"✅ [PROCESSING] Completed processing {len(pending_messages)} messages for {user_phone}")
+        print(f"🧹 [PROCESSING] Cleared buffer and updated last_processed_at for {user_phone}")
         
     except Exception as e:
         print(f"❌ Error processing pending messages: {e}")
@@ -262,6 +589,17 @@ def process_pending_messages_db(user_phone: str, instance_name: str, client_conf
         if "does not exist" in str(e) and current_message:
             print("⚠️ Cooldown table not available, processing current message")
             process_single_message(user_phone, current_message, instance_name, client_config, user_name)
+    finally:
+        # Always remove user from processing set and clear processing lock
+        processing_users.discard(user_phone)
+        try:
+            if supabase:
+                supabase.table('message_cooldown').update({
+                    'processing_lock': False
+                }).eq('user_phone', user_phone).execute()
+        except:
+            pass  # Ignore errors when clearing lock
+        print(f"🔓 [PROCESSING] Released processing lock for {user_phone}")
 
 def process_single_message(user_phone: str, message_text: str, instance_name: str, client_config: Dict[str, Any], user_name: str = ""):
     """Process a single message with AI - fallback when cooldown system unavailable"""
@@ -482,7 +820,7 @@ def get_client_by_instance(instance_name: str) -> Optional[Dict[str, Any]]:
         return None
 
 def send_whatsapp_message_simple(message: str, phone_number: str, instance_name: str, evolution_api_key: str) -> bool:
-    """Send message via Evolution API"""
+    """Send message via Evolution API with enhanced error handling"""
     try:
         import requests
         
@@ -499,17 +837,51 @@ def send_whatsapp_message_simple(message: str, phone_number: str, instance_name:
             "apikey": evolution_api_key.strip()
         }
 
+        print(f"📡 Sending message via Evolution API:")
+        print(f"   URL: {url}")
+        print(f"   Headers: {{'Content-Type': 'application/json', 'apikey': '{evolution_api_key[:8]}...{evolution_api_key[-4:]}'}}")
+        print(f"   Payload: {payload}")
+
         response = requests.post(url, json=payload, headers=headers, timeout=10)
 
         if response.status_code in (200, 201):
-            print(f"✅ Message sent to {phone_number}")
+            print(f"✅ Message sent successfully to {phone_number}")
+            print(f"   Response: {response.text[:200]}...")
             return True
         else:
             print(f"❌ Failed to send message: {response.status_code} - {response.text}")
+            
+            # Enhanced error logging for specific status codes
+            if response.status_code == 401:
+                print("🔐 Authentication Error Details:")
+                print(f"   - API Key: {evolution_api_key[:8]}...{evolution_api_key[-4:]}")
+                print(f"   - URL: {evolution_url}")
+                print(f"   - Instance: {instance_name}")
+                print("   - Possible causes: Invalid API key, expired key, or incorrect instance name")
+            elif response.status_code == 404:
+                print("🔍 Not Found Error Details:")
+                print(f"   - Instance '{instance_name}' may not exist or be disconnected")
+                print(f"   - Check if WhatsApp instance is connected")
+            elif response.status_code == 500:
+                print("🔧 Server Error Details:")
+                print("   - Evolution API server error")
+                print("   - Check Evolution API service status")
+            
             return False
             
+    except requests.exceptions.Timeout:
+        print(f"⏰ Timeout sending message to {phone_number}")
+        print("   - Evolution API took too long to respond")
+        return False
+    except requests.exceptions.ConnectionError:
+        print(f"🌐 Connection error sending message to {phone_number}")
+        print(f"   - Cannot connect to Evolution API at {evolution_url}")
+        return False
     except Exception as e:
-        print(f"❌ Error sending WhatsApp message: {e}")
+        print(f"❌ Unexpected error sending WhatsApp message: {e}")
+        print(f"   - Error type: {type(e).__name__}")
+        import traceback
+        print(f"   - Traceback: {traceback.format_exc()}")
         return False
 
 def process_message_with_ai(message_text: str, user_phone: str, client_config: Dict[str, Any]) -> Optional[str]:
@@ -659,30 +1031,6 @@ def add_message_to_buffer(user_phone: str, message_text: str, instance_name: str
     except Exception as e:
         print(f"❌ Error adding message to buffer: {e}")
 
-def save_message_to_database(client_id: str, user_phone: str, message_text: str, direction: str, user_name: str = "") -> bool:
-    """Save message to Supabase"""
-    try:
-        supabase = get_supabase_client()
-        if not supabase:
-            return False
-            
-        message_data = {
-            "client_id": client_id,
-            "user_id": user_phone,
-            "user_name": user_name,
-            "message_direction": direction,
-            "content": message_text,
-            "message_metadata": {},
-            "status": "none",
-            "lead_score": 0
-        }
-        
-        result = supabase.table('messages').insert(message_data).execute()
-        return bool(result.data)
-        
-    except Exception as e:
-        print(f"❌ Error saving message: {e}")
-        return False
 
 class handler(BaseHTTPRequestHandler):
     def _send_cors_headers(self, status_code=200):
@@ -1403,20 +1751,31 @@ class handler(BaseHTTPRequestHandler):
                     if incoming_key:
                         client_config['evolution_api_key'] = incoming_key.strip()
 
-                    incoming_url = body.get('server_url')
-                    if incoming_url:
-                        client_config['evolution_api_url'] = incoming_url.strip().rstrip('/')
+                    # Note: Do not override evolution_api_url with server_url from webhook
+                    # The server_url is the webhook sender's URL, not the Evolution API URL
+                    # Keep using the configured evolution_api_url from database
 
-                    # Use database-based cooldown system
+                    # Use enhanced database-based cooldown system with serverless compatibility
                     client_id = client_config.get('id')
-                    should_process = should_process_message_db(from_user, client_id, COOLDOWN_SECONDS)
                     
-                    if should_process:
-                        print(f"✅ Processing message immediately (cooldown elapsed)")
-                        process_pending_messages_db(from_user, instance_name, client_config, message_text, user_name)
+                    # Process message immediately - no buffer system
+                    print(f"📥 Processing message immediately: {message_text}")
+                    
+                    # Process with AI (with context)
+                    response = process_with_gemini_ai(message_text, client_config, from_user)
+                    if response:
+                        # Send response
+                        send_whatsapp_message(from_user, response, instance_name, client_config)
+                        
+                        # Save messages to database
+                        client_id = client_config.get('id')
+                        if client_id:
+                            save_message_to_database(client_id, from_user, message_text, 'inbound', user_name)
+                            save_message_to_database(client_id, from_user, response, 'outbound', '')
+                        
+                        print(f"✅ Message processed and response sent to {from_user}")
                     else:
-                        print(f"⏳ Adding to cooldown buffer (within cooldown period)")
-                        add_message_to_cooldown_db(from_user, message_text, instance_name, client_config, user_name)
+                        print(f"❌ No AI response generated for {from_user}")
                     
                 elif event_type == 'CONNECTION_UPDATE':
                     # Handle connection status updates
