@@ -158,7 +158,7 @@ def send_whatsapp_message(user_phone: str, message: str, instance_name: str, cli
     try:
         import requests
         
-        evolution_url = client_config.get('evolution_api_url', '').strip()
+        evolution_url = client_config.get('evolution_api_url', '').strip().rstrip('/')
         evolution_key = client_config.get('evolution_api_key', '').strip()
 
         if not evolution_url or not evolution_key:
@@ -1398,10 +1398,14 @@ class handler(BaseHTTPRequestHandler):
                     
                     print(f"🔍 Found client: {client_config.get('name', 'Unknown')}")
 
-                    # Override Evolution API key with webhook-provided key if present
+                    # Override Evolution API credentials with webhook-provided values
                     incoming_key = body.get('apikey')
                     if incoming_key:
                         client_config['evolution_api_key'] = incoming_key.strip()
+
+                    incoming_url = body.get('server_url')
+                    if incoming_url:
+                        client_config['evolution_api_url'] = incoming_url.strip().rstrip('/')
 
                     # Use database-based cooldown system
                     client_id = client_config.get('id')
