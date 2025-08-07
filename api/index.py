@@ -158,9 +158,9 @@ def send_whatsapp_message(user_phone: str, message: str, instance_name: str, cli
     try:
         import requests
         
-        evolution_url = client_config.get('evolution_api_url')
-        evolution_key = client_config.get('evolution_api_key')
-        
+        evolution_url = client_config.get('evolution_api_url', '').strip()
+        evolution_key = client_config.get('evolution_api_key', '').strip()
+
         if not evolution_url or not evolution_key:
             print("⚠️ Evolution API not configured")
             return False
@@ -181,8 +181,8 @@ def send_whatsapp_message(user_phone: str, message: str, instance_name: str, cli
         }
         
         response = requests.post(url, json=payload, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
+
+        if response.status_code in (200, 201):
             print(f"📤 Message sent to {user_phone}")
             return True
         else:
@@ -488,20 +488,20 @@ def send_whatsapp_message_simple(message: str, phone_number: str, instance_name:
         
         evolution_url = "https://evolutionapi.centralsupernova.com.br"
         url = f"{evolution_url}/message/sendText/{instance_name}"
-        
+
         payload = {
             "number": phone_number,
             "text": message
         }
-        
+
         headers = {
             "Content-Type": "application/json",
-            "apikey": evolution_api_key
+            "apikey": evolution_api_key.strip()
         }
-        
+
         response = requests.post(url, json=payload, headers=headers, timeout=10)
-        
-        if response.status_code == 201:
+
+        if response.status_code in (200, 201):
             print(f"✅ Message sent to {phone_number}")
             return True
         else:
@@ -1397,7 +1397,12 @@ class handler(BaseHTTPRequestHandler):
                         return
                     
                     print(f"🔍 Found client: {client_config.get('name', 'Unknown')}")
-                    
+
+                    # Override Evolution API key with webhook-provided key if present
+                    incoming_key = body.get('apikey')
+                    if incoming_key:
+                        client_config['evolution_api_key'] = incoming_key.strip()
+
                     # Use database-based cooldown system
                     client_id = client_config.get('id')
                     should_process = should_process_message_db(from_user, client_id, COOLDOWN_SECONDS)
