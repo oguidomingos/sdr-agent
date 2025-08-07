@@ -3,7 +3,7 @@ from fastapi.security import HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.core.db import get_db, User, Client, AgentConfig, UserStatus
 from src.core.auth import auth_service, get_current_active_user, create_user_token
@@ -109,7 +109,7 @@ async def login_user(
         )
     
     # Atualiza último login
-    user.last_login = datetime.utcnow()
+    user.last_login = datetime.now(timezone.utc)
     await db.commit()
     
     token_data = create_user_token(user)

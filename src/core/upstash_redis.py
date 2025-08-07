@@ -6,7 +6,7 @@ import json
 import redis
 from typing import Optional, Dict, Any
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ class SessionManager:
     async def store_session(self, client_id: str, user_id: str, session_data: Dict[str, Any]) -> bool:
         """Store user session data"""
         key = self._get_session_key(client_id, user_id)
-        session_data['last_activity'] = datetime.utcnow().isoformat()
+        session_data['last_activity'] = datetime.now(timezone.utc).isoformat()
         return await self.redis.set_with_expiry(key, session_data, self.default_expiry)
     
     async def get_session(self, client_id: str, user_id: str) -> Optional[Dict[str, Any]]:
@@ -110,7 +110,7 @@ class SessionManager:
         session = await self.get_session(client_id, user_id)
         if session:
             session.update(updates)
-            session['last_activity'] = datetime.utcnow().isoformat()
+            session['last_activity'] = datetime.now(timezone.utc).isoformat()
             return await self.store_session(client_id, user_id, session)
         return False
     
@@ -135,7 +135,7 @@ class SessionManager:
         
         conversation_data = {
             'messages': messages,
-            'updated_at': datetime.utcnow().isoformat()
+            'updated_at': datetime.now(timezone.utc).isoformat()
         }
         
         return await self.redis.set_with_expiry(key, conversation_data, self.default_expiry * 24)  # 24 hours for conversation

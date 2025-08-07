@@ -2,7 +2,7 @@
 """Test direct message insertion to validate the fix"""
 
 from supabase import create_client
-from datetime import datetime
+from datetime import datetime, timezone
 
 def test_direct_insert():
     """Test inserting a message directly to verify schema compatibility"""
@@ -65,7 +65,7 @@ def test_old_structure():
             "user_id": "5561936180578@s.whatsapp.net",
             "message_direction": "inbound",
             "content": "Test message old structure",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "status": "none",
             "lead_score": 0
         }

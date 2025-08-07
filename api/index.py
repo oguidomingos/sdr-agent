@@ -9,7 +9,7 @@ import os
 import uuid
 import requests
 import google.generativeai as genai
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 import threading
 import asyncio
@@ -38,7 +38,7 @@ def should_process_message_db(user_phone: str, client_id: str, cooldown_seconds:
             .eq('user_phone', user_phone)\
             .execute()
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         if not result.data:
             print(f"🆕 First message from {user_phone}, creating cooldown record")
@@ -52,7 +52,11 @@ def should_process_message_db(user_phone: str, client_id: str, cooldown_seconds:
             return False  # Don't process immediately, wait for cooldown
             
         record = result.data[0]
-        last_message_at = datetime.fromisoformat(record['last_message_at'].replace('Z', '+00:00'))
+        last_message_at = record['last_message_at']
+        if isinstance(last_message_at, str):
+            last_message_at = datetime.fromisoformat(last_message_at.replace('Z', '+00:00'))
+        if last_message_at.tzinfo is None:
+            last_message_at = last_message_at.replace(tzinfo=timezone.utc)
         time_diff = (now - last_message_at).total_seconds()
         
         print(f"⏱️ Last message was {time_diff:.1f}s ago (cooldown: {cooldown_seconds}s)")
@@ -78,7 +82,7 @@ def add_message_to_cooldown_db(user_phone: str, message_text: str, instance_name
             return
             
         client_id = client_config.get('id')
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # Get existing cooldown record
         result = supabase.table('message_cooldown')\
@@ -222,7 +226,7 @@ def process_pending_messages_db(user_phone: str, instance_name: str, client_conf
         if current_message:
             pending_messages.append({
                 'text': current_message,
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             })
         
         # Combine all messages into context
@@ -244,7 +248,7 @@ def process_pending_messages_db(user_phone: str, instance_name: str, client_conf
                 save_message_to_database(client_id, user_phone, response, 'outbound', user_name)
         
         # Update cooldown record - clear pending messages and set processed timestamp
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         supabase.table('message_cooldown').update({
             'pending_messages': [],
             'last_processed_at': now.isoformat()
@@ -868,7 +872,7 @@ class handler(BaseHTTPRequestHandler):
             self._send_json_response({
                 "status": "success" if success else "partial_failure",
                 "message": "Webhook reconfiguration completed",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
         elif path == 'test-ai-processing':
             # Test endpoint for AI processing
@@ -906,13 +910,13 @@ class handler(BaseHTTPRequestHandler):
                         "status": "success",
                         "ai_response": ai_response,
                         "message_sent": success,
-                        "timestamp": datetime.utcnow().isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat()
                     })
                 else:
                     self._send_json_response({
                         "status": "error",
                         "error": "AI did not generate response",
-                        "timestamp": datetime.utcnow().isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat()
                     }, 500)
                     
             except Exception as e:
@@ -920,7 +924,7 @@ class handler(BaseHTTPRequestHandler):
                 self._send_json_response({
                     "status": "error", 
                     "error": str(e),
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }, 500)
         elif path.startswith('clients/') and path.endswith('/qrcode'):
             # Get QR code for specific client
@@ -1015,7 +1019,7 @@ class handler(BaseHTTPRequestHandler):
             self._send_json_response({
                 "message": "Webhook endpoint is active",
                 "path": path,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "status": "ready"
             })
         else:
@@ -1134,7 +1138,7 @@ class handler(BaseHTTPRequestHandler):
             if not supabase:
                 # Fallback to mock data if Supabase not available
                 client_id = f"client_{int(time.time())}_{hash(name) % 1000}"
-                current_time = datetime.utcnow().isoformat() + "Z"
+                current_time = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                 
                 client_data = {
                     "id": client_id,
@@ -1174,7 +1178,7 @@ class handler(BaseHTTPRequestHandler):
             # Create client in Supabase
             try:
                 client_id = str(uuid.uuid4())
-                current_time = datetime.utcnow().isoformat()
+                current_time = datetime.now(timezone.utc).isoformat()
                 
                 client_data = {
                     "id": client_id,
@@ -1256,7 +1260,7 @@ class handler(BaseHTTPRequestHandler):
             self._send_json_response({
                 "status": "success" if success else "partial_failure",
                 "message": "Webhook reconfiguration completed",
-                "timestamp": datetime.utcnow().isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat()
             })
         elif path == 'webhook/whatsapp' or path.startswith('webhook/whatsapp/'):
             # Webhook endpoint for Evolution API with AI processing
@@ -1270,7 +1274,7 @@ class handler(BaseHTTPRequestHandler):
                 
                 # FORCE PRINT - ESSENTIAL DEBUG INFO
                 print("=" * 80)
-                print(f"🚨 WEBHOOK RECEIVED AT {datetime.utcnow().isoformat()}")
+                print(f"🚨 WEBHOOK RECEIVED AT {datetime.now(timezone.utc).isoformat()}")
                 print(f"🚨 METHOD: {getattr(self, 'command', 'UNKNOWN')}")
                 print(f"🚨 FULL PATH: {self.path}")
                 print(f"🚨 PARSED PATH: {path}")
@@ -1420,7 +1424,7 @@ class handler(BaseHTTPRequestHandler):
                     "received": True,
                     "event": event_type,
                     "processed": True,
-                    "timestamp": datetime.utcnow().isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat()
                 })
                 
             except Exception as e:
@@ -1430,7 +1434,7 @@ class handler(BaseHTTPRequestHandler):
                     "status": "error",
                     "error": str(e),
                     "received": True,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 })
         else:
             self._send_json_response({

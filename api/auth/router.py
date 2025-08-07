@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 import jwt
 import bcrypt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 
 from src.core.supabase_db import get_supabase_db
@@ -49,12 +49,12 @@ JWT_EXPIRATION_HOURS = int(os.environ.get("JWT_EXPIRATION_HOURS", "24"))
 
 def create_access_token(user_id: str, email: str) -> str:
     """Create JWT access token"""
-    expire = datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
+    expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
     payload = {
         "user_id": user_id,
         "email": email,
         "exp": expire,
-        "iat": datetime.utcnow()
+        "iat": datetime.now(timezone.utc)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -95,7 +95,7 @@ async def login(user_data: UserLogin):
         raise HTTPException(status_code=401, detail="Account is not active")
     
     # Update last login
-    await db.update_user(user['id'], {'last_login': datetime.utcnow().isoformat()})
+    await db.update_user(user['id'], {'last_login': datetime.now(timezone.utc).isoformat()})
     
     # Create access token
     access_token = create_access_token(user['id'], user['email'])
