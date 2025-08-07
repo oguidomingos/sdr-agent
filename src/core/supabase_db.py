@@ -5,7 +5,7 @@ Replaces the traditional SQLAlchemy setup with Supabase client operations
 import os
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from supabase import create_client, Client
 import logging
@@ -74,7 +74,7 @@ class SupabaseDB:
     async def update_user(self, user_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update user data"""
         try:
-            updates['updated_at'] = datetime.utcnow().isoformat()
+            updates['updated_at'] = datetime.now(timezone.utc).isoformat()
             result = self.client.table('users').update(updates).eq('id', user_id).execute()
             return result.data[0] if result.data else None
         except Exception as e:
@@ -121,7 +121,7 @@ class SupabaseDB:
     async def update_client(self, client_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update client data"""
         try:
-            updates['updated_at'] = datetime.utcnow().isoformat()
+            updates['updated_at'] = datetime.now(timezone.utc).isoformat()
             result = self.client.table('clients').update(updates).eq('id', client_id).execute()
             return result.data[0] if result.data else None
         except Exception as e:
@@ -221,7 +221,7 @@ class SupabaseDB:
     async def update_playbook(self, playbook_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update playbook data"""
         try:
-            updates['updated_at'] = datetime.utcnow().isoformat()
+            updates['updated_at'] = datetime.now(timezone.utc).isoformat()
             result = self.client.table('playbooks').update(updates).eq('id', playbook_id).execute()
             return result.data[0] if result.data else None
         except Exception as e:

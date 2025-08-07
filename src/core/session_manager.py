@@ -3,7 +3,7 @@ Refactored Session Manager for Supabase + Upstash Redis architecture
 Replaces the old session.py with cloud-native session management
 """
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import uuid
 import logging
@@ -76,7 +76,7 @@ class CloudSessionManager:
             session_context = SessionContext(
                 user_id=user_id,
                 messages=messages,
-                last_interaction=messages[-1].timestamp if messages else datetime.utcnow(),
+                last_interaction=messages[-1].timestamp if messages else datetime.now(timezone.utc),
                 metadata=messages[-1].metadata if messages else {}
             )
             
@@ -118,7 +118,9 @@ class CloudSessionManager:
                 'message_direction': message.message_direction,
                 'content': message.content,
                 'timestamp': message.timestamp.isoformat() if isinstance(message.timestamp, datetime) else message.timestamp,
-                'message_metadata': message.metadata or {}
+                'message_metadata': message.metadata or {},
+                'status': 'none',  # Always use 'none' instead of 'received'
+                'lead_score': 0
             }
             
             await self.db.create_message(message_data)
@@ -142,7 +144,7 @@ class CloudSessionManager:
             session_context = SessionContext(
                 user_id=user_id,
                 messages=messages,
-                last_interaction=datetime.utcnow(),
+                last_interaction=datetime.now(timezone.utc),
                 metadata={
                     **(messages[-2].metadata if len(messages) > 1 else {}),
                     **(metadata or {})
@@ -160,7 +162,7 @@ class CloudSessionManager:
             return SessionContext(
                 user_id=user_id,
                 messages=[message],
-                last_interaction=datetime.utcnow(),
+                last_interaction=datetime.now(timezone.utc),
                 metadata=metadata or {}
             )
     

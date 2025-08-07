@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy import Column, String, DateTime, JSON, Enum, Integer, Boolean, Text, ForeignKey, Index, text
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from passlib.context import CryptContext
 
@@ -61,8 +61,8 @@ class User(Base):
     language = Column(String(10), default="pt-BR")
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     last_login = Column(DateTime)
     
     # Relationships
@@ -138,8 +138,8 @@ class Client(Base):
     db_connection_uri = Column(String(1000))  # URI do banco dedicado (opcional)
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     owner = relationship("User", back_populates="clients")
@@ -178,8 +178,8 @@ class Playbook(Base):
     need_payoff_prompts = Column(JSON)
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     client = relationship("Client", back_populates="playbooks")
@@ -220,8 +220,8 @@ class AgentConfig(Base):
     batch_window_seconds = Column(Integer, default=180)  # 3 minutos
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     client = relationship("Client", back_populates="agent_configs")
@@ -240,7 +240,7 @@ class Message(Base):
     user_name = Column(String(255))
     message_direction = Column(Enum(MessageDirection, name='message_direction', values_callable=lambda obj: [e.value for e in obj]))
     content = Column(Text)
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     message_metadata = Column(JSON)
     status = Column(Enum(MessageStatus, name='message_status', values_callable=lambda obj: [e.value for e in obj]), default=MessageStatus.NONE)
     

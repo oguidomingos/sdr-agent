@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, validator
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 
 
@@ -43,7 +43,7 @@ class Message(BaseModel):
     user_name: str = Field(..., description="Nome do usuário")
     message_direction: MessageDirection = Field(..., description="Direção da mensagem (entrada/saída)")
     content: str = Field(..., description="Conteúdo da mensagem")
-    timestamp: datetime = Field(default_factory=datetime.now)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Optional[Dict[str, Any]] = Field(default=None)
 
 
@@ -53,7 +53,7 @@ class SessionContext(BaseModel):
     """
     user_id: str
     messages: List[Message] = Field(default_factory=list)
-    last_interaction: datetime = Field(default_factory=datetime.now)
+    last_interaction: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Optional[Dict[str, Any]] = Field(default=None)
 
     class Config:

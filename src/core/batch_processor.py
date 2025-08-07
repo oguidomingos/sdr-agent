@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from collections import defaultdict
@@ -198,12 +198,19 @@ class BatchProcessor:
             int: Número de lotes removidos
         """
         expired_users = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         async with self._lock:
             for user_id, batch in self.batches.items():
                 if batch.last_message_time:
-                    time_diff = now - batch.last_message_time
+                    # Normalize both datetime objects to have same timezone info
+                    last_msg_time = batch.last_message_time
+                    if last_msg_time.tzinfo is None:
+                        last_msg_time = last_msg_time.replace(tzinfo=timezone.utc)
+                    elif now.tzinfo is None:
+                        now = now.replace(tzinfo=timezone.utc)
+                    
+                    time_diff = now - last_msg_time
                     if time_diff > timedelta(seconds=self.batch_window_seconds * 2):
                         expired_users.append(user_id)
         
