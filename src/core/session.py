@@ -1,5 +1,5 @@
-from typing import Optional, List
-from datetime import datetime
+from typing import Optional, List, Any
+from datetime import datetime, timezone
 import json
 import redis
 import uuid
@@ -35,6 +35,15 @@ class SessionManager:
         else:
             # Fallback to old format for backward compatibility
             return f"session:{user_id}"
+
+    def _normalize_timestamp(self, ts: Any) -> datetime:
+        if isinstance(ts, str):
+            dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+        else:
+            dt = ts
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
     
     async def _get_client_settings(self, client_id: str) -> Optional[ClientSettings]:
         """Load client settings from database"""
@@ -113,7 +122,7 @@ class SessionManager:
                 return SessionContext(
                     user_id=data['user_id'],
                     messages=messages,
-                    last_interaction=datetime.fromisoformat(data['last_interaction']),
+                    last_interaction=self._normalize_timestamp(data['last_interaction']),
                     metadata=data.get('metadata')
                 )
             else:

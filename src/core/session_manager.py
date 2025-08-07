@@ -15,6 +15,16 @@ from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+
+def normalize_timestamp(ts: Any) -> datetime:
+    if isinstance(ts, str):
+        dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+    else:
+        dt = ts
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
 class CloudSessionManager:
     """
     Cloud-native session manager using Supabase + Upstash Redis
@@ -50,7 +60,7 @@ class CloudSessionManager:
                 return SessionContext(
                     user_id=user_id,
                     messages=messages,
-                    last_interaction=datetime.fromisoformat(session_data['last_interaction']),
+                    last_interaction=normalize_timestamp(session_data['last_interaction']),
                     metadata=session_data.get('metadata', {})
                 )
             
@@ -68,7 +78,7 @@ class CloudSessionManager:
                     user_name=db_msg.get('user_name', ''),
                     message_direction=db_msg['message_direction'],
                     content=db_msg['content'],
-                    timestamp=datetime.fromisoformat(db_msg['timestamp']) if isinstance(db_msg['timestamp'], str) else db_msg['timestamp'],
+                    timestamp=normalize_timestamp(db_msg['timestamp']),
                     metadata=db_msg.get('message_metadata', {})
                 ))
             
@@ -136,7 +146,7 @@ class CloudSessionManager:
                     user_name=db_msg.get('user_name', ''),
                     message_direction=db_msg['message_direction'],
                     content=db_msg['content'],
-                    timestamp=datetime.fromisoformat(db_msg['timestamp']) if isinstance(db_msg['timestamp'], str) else db_msg['timestamp'],
+                    timestamp=normalize_timestamp(db_msg['timestamp']),
                     metadata=db_msg.get('message_metadata', {})
                 ))
             

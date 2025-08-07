@@ -4,7 +4,7 @@ Messages router for serverless deployment
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from src.core.supabase_db import get_supabase_db
 from api.auth.router import verify_token
@@ -78,7 +78,7 @@ async def get_messages(
     
     if date_from or date_to:
         def filter_by_date(msg):
-            msg_date = datetime.fromisoformat(msg['timestamp']).date()
+            msg_date = datetime.fromisoformat(msg['timestamp'].replace('Z', '+00:00')).date()
             if date_from and msg_date < date_from:
                 return False
             if date_to and msg_date > date_to:
@@ -148,7 +148,7 @@ async def get_message_stats(
     # Apply date filters
     if date_from or date_to:
         def filter_by_date(msg):
-            msg_date = datetime.fromisoformat(msg['timestamp']).date()
+            msg_date = datetime.fromisoformat(msg['timestamp'].replace('Z', '+00:00')).date()
             if date_from and msg_date < date_from:
                 return False
             if date_to and msg_date > date_to:
@@ -164,10 +164,10 @@ async def get_message_stats(
     qualified_leads = len([msg for msg in all_messages if msg.get('status') == 'qualified'])
     
     # Count active conversations (unique user_ids with recent messages)
-    recent_cutoff = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    recent_cutoff = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     recent_users = set()
     for msg in all_messages:
-        msg_date = datetime.fromisoformat(msg['timestamp'])
+        msg_date = datetime.fromisoformat(msg['timestamp'].replace('Z', '+00:00'))
         if msg_date >= recent_cutoff:
             recent_users.add(msg['user_id'])
     

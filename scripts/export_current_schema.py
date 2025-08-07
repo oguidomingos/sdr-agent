@@ -5,7 +5,7 @@ Script to export current PostgreSQL schema and data for migration to Supabase
 import asyncio
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import text
 from src.core.db import engine, AsyncSessionLocal
 from src.core.db import User, Client, Message, Playbook, AgentConfig
@@ -15,7 +15,7 @@ async def export_schema_info():
     print("🔍 Exporting current PostgreSQL schema information...")
     
     schema_info = {
-        "export_date": datetime.utcnow().isoformat(),
+        "export_date": datetime.now(timezone.utc).isoformat(),
         "tables": {},
         "indexes": {},
         "constraints": {}
@@ -109,7 +109,7 @@ async def export_sample_data():
     print("📊 Exporting sample data...")
     
     sample_data = {
-        "export_date": datetime.utcnow().isoformat(),
+        "export_date": datetime.now(timezone.utc).isoformat(),
         "users": [],
         "clients": [],
         "messages": [],

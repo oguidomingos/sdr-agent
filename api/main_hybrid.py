@@ -9,7 +9,7 @@ from typing import Optional
 import os
 import sys
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Create FastAPI app
 app = FastAPI(
@@ -102,12 +102,12 @@ JWT_EXPIRATION_HOURS = int(os.environ.get("JWT_EXPIRATION_HOURS", "24"))
 
 def create_access_token(user_id: str, email: str) -> str:
     """Create JWT access token"""
-    expire = datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
+    expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
     payload = {
         "user_id": user_id,
         "email": email,
         "exp": expire,
-        "iat": datetime.utcnow()
+        "iat": datetime.now(timezone.utc)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -175,7 +175,7 @@ async def login(user_data: UserLogin):
                 if verify_password_simple(user_data.password, user_data.email):
                     # Update last login
                     supabase_client.table('users').update({
-                        'last_login': datetime.utcnow().isoformat()
+                        'last_login': datetime.now(timezone.utc).isoformat()
                     }).eq('id', user['id']).execute()
                     
                     # Create access token
@@ -256,7 +256,7 @@ async def register(user_data: UserRegister):
         last_name=user_data.last_name,
         status="active",
         plan="free",
-        created_at=datetime.utcnow().isoformat()
+        created_at=datetime.now(timezone.utc).isoformat()
     )
 
 @app.get("/auth/me", response_model=UserResponse)

@@ -10,7 +10,7 @@ Teste completo do sistema SDR Agent
 import requests
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Configuração do teste
 BASE_URL = "https://sdr-agent-five.vercel.app"
@@ -53,7 +53,7 @@ def test_webhook_message():
             "source": "test"
         },
         "destination": f"{BASE_URL}/api/webhook/whatsapp/{INSTANCE}",
-        "date_time": datetime.utcnow().isoformat() + "Z",
+        "date_time": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "sender": f"{TEST_PHONE}@s.whatsapp.net",
         "server_url": "http://localhost:8080",
         "apikey": "test-api-key"
